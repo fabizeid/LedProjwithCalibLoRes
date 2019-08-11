@@ -13,6 +13,7 @@ Capture video;
 import gab.opencv.*;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.core.Size;
+import org.opencv.core.MatOfDouble;
 import org.opencv.core.Mat;
 import org.opencv.core.Core;
 import org.opencv.video.BackgroundSubtractorMOG;
@@ -29,6 +30,8 @@ ArrayList<PVector> points;
 final int nBimgs = 2;//13*2;
 Mat[] bImgsMat,bImgsMatR,bImgsMatG,bImgsMatB,bImgsMatGray;
 PImage ROIImg;
+MatOfDouble mean;
+MatOfDouble std;
 final int[] ROIRange = {0,2};
 int [] bImgsEnergy;
 float [] bImgsMean;
@@ -82,7 +85,7 @@ boolean debugMode = false;
 boolean debugBackground = false;
 boolean enableTest = false;
 boolean enablePaint = false;
-boolean enableContour = false;
+boolean enableContour = true;
 boolean stopLoop = false;
 boolean saveContour = false;
 char detectionAlg = 'd'; //(e)dge (m)otion (d)iff (o)ff
@@ -155,6 +158,9 @@ void setup() {
     backImg  = createImage(w,h,ALPHA);
     inputImg  = createImage(w,h,ALPHA);
     ROIImg = createImage(w,ROIRange[1]-ROIRange[0],ARGB);
+    mean = new MatOfDouble();
+    std = new MatOfDouble();
+
     lastGestureCheck = millis();
     lastBorderCheck = millis();
     gestureState = 0;
@@ -261,8 +267,9 @@ void draw() {
         runMotionDetectionAlgorithm();
     else if (detectionAlg == 'e')
         runEdgeAlgorithm(lvl*audioGain);
-    else if (detectionAlg == 'd')
-        runDiffAlgorithm();
+    else if (detectionAlg == 'd'){
+        if(runDiffAlgorithm()) return;
+    }
     else if (detectionAlg == 'c')
         calibrateLED();
 
@@ -462,12 +469,22 @@ void calibrateForEdge(){
 
 }
 
-void runDiffAlgorithm(){
+boolean runDiffAlgorithm(){
 
     int i;
-    if(useMeanforBg)
+    if(useMeanforBg){
+        //First detect if intrusion in ROI area
+        //if stddev increases on diff of ROI, intrusion is
+        // detected, turn off processing until no more intrusion
+        //TODO: absdiff ROI with last selected background ROI
+        Core.meanStdDev(opencv.matGray.rowRange(ROIRange[0],ROIRange[1]),mean,std);
+        float fstd = (float)std.get(0,0)[0];
+        if(fstd > 10){
+            println((float)mean.get(0,0)[0],fstd);
+            return true;
+        }
         i = getMeanIdx(opencv.matGray.rowRange(ROIRange[0],ROIRange[1]));
-    else
+    } else
         i = getBackgroundEnergyIdx();
 //    if(debugMode){
 //      opencv.toPImage(opencv.matGray.rowRange(ROIRange[0],ROIRange[1]),ROIImg);
@@ -547,6 +564,7 @@ void runDiffAlgorithm(){
     opencv.dilate();
     opencv.erode();
     if(enablePaint) paint();
+    return false;
 }
 
 
@@ -860,6 +878,7 @@ void initDiffAlgorithm(){
         }
 
         initIdx++;
+        /*********************************************
         spread((int)calibLvl,250,numLedPerStrip/2,0);
         //background(calibLvl);
         //borderWidth = (int)calibLvl;
@@ -884,7 +903,8 @@ void initDiffAlgorithm(){
         opencv.loadImage(calibImg);
 
         bImgsEnergy[i] = opc.getLEDEnergy();
-        bImgsMean[i] = (float)Core.mean(opencv.getGray()).val[0];
+        //bImgsMean[i] = (float)Core.mean(opencv.getGray()).val[0];
+        bImgsMean[i] = (float)Core.mean(opencv.matGray.rowRange(ROIRange[0],ROIRange[1])).val[0];
         println(bImgsEnergy[i],bImgsMean[i]);
 
         // last contour is not recorded
