@@ -4,8 +4,8 @@ void dispatch2() {
 
     switch(menuState){
     case 't':
-	println("t");
-	break;		
+        println("t");
+        break;
     }
 
 }
@@ -13,97 +13,97 @@ void dispatch2() {
 void dispatch() {
 
     if (detectionAlg == 'c'){
-	switch(key) {
-	case 'i': //insert plot point
-	    insertPlotData();
-	    lastKey = 0;
-	    return;
-	case 'r': //reset 	    
-	    resetCalibrateLED();
-	    lastKey = 0;
-	    return;
+        switch(key) {
+        case 'i': //insert plot point
+            insertPlotData();
+            lastKey = 0;
+            return;
+        case 'r': //reset
+            resetCalibrateLED();
+            lastKey = 0;
+            return;
         case ';':
             if(numLedOn >= numStrips) numLedOn -= numStrips;
             println("numLedOn:", numLedOn);
-	    lastKey = 0;
-	    return;
+            lastKey = 0;
+            return;
         case '.':
             if(ledIntensity >= 10) ledIntensity -= 10;
             println("Led intensity:", ledIntensity);
-	    lastKey = 0;
-	    return;
+            lastKey = 0;
+            return;
         case '\'':
             if(numLedOn < (numStrips-1)*numLedPerStrip*2/3) numLedOn += numStrips;
             println("numLedOn:", numLedOn);
-	    lastKey = 0;
-	    return;
+            lastKey = 0;
+            return;
         case '/':
-	    if(ledIntensity < 245) ledIntensity += 10;
+            if(ledIntensity < 245) ledIntensity += 10;
             println("Led intensity:", ledIntensity);
-	    lastKey = 0;
-	    return;
-	}
+            lastKey = 0;
+            return;
+        }
 
     }
 
     if(calibForEdge && detectionAlg == 'e'){
-	switch(key) {
-	case 'l': //load to array
-	    loadCalibForEdge();
-	    lastKey = 0;
-	    return;
-	case 's': //save to file
-	    saveCalibForEdge();
-	    lastKey = 0;
-	    return;
-	case 'i': //insert to array
-	    insertAndSortCalibForEdge();
-	    lastKey = 0;
-	    return;
-	case 'r': //reset calibration array	    
-	    resetCalibForEdge();
-	    lastKey = 0;
-	    return;
+        switch(key) {
+        case 'l': //load to array
+            loadCalibForEdge();
+            lastKey = 0;
+            return;
+        case 's': //save to file
+            saveCalibForEdge();
+            lastKey = 0;
+            return;
+        case 'i': //insert to array
+            insertAndSortCalibForEdge();
+            lastKey = 0;
+            return;
+        case 'r': //reset calibration array
+            resetCalibForEdge();
+            lastKey = 0;
+            return;
         case ';':
             highEdgeThresh -= 5;
-	    lastKey = 0;
+            lastKey = 0;
             println("highEdgeThresh :", highEdgeThresh);
-	    return;
+            return;
         case '.':
             lowEdgeThresh -= 5;
-	    lastKey = 0;
+            lastKey = 0;
             println("lowEdgeThresh :", lowEdgeThresh);
-	    return;
+            return;
         case '\'':
             highEdgeThresh += 5;
-	    lastKey = 0;
+            lastKey = 0;
             println("highEdgeThresh :", highEdgeThresh);
-	    return;
+            return;
         case '/':
             lowEdgeThresh += 5;
-	    lastKey = 0;
+            lastKey = 0;
             println("lowEdgeThresh :", lowEdgeThresh);
-	    return;
-	}
-	
+            return;
+        }
+
     }
 
     if(lastKey == 'p'){
         switch(key) {
         case 't':
-            printThreshold = !printThreshold; 
+            printThreshold = !printThreshold;
             break;
         case 's':
-            printSLvl = !printSLvl; 
+            printSLvl = !printSLvl;
             break;
         case 'e':
-            printEnergy = !printEnergy; 
+            printEnergy = !printEnergy;
             break;
         case 'o':
-            oneShotPrint = true; 
+            oneShotPrint = true;
             break;
         }
-        
+
         lastKey = 0;
         key = 0;
         return;
@@ -117,7 +117,7 @@ void dispatch() {
             break;
         case 'c':
             enableContour = !enableContour;
-	    println("Contour",enableContour?"On":"Off");
+            println("Contour",enableContour?"On":"Off");
             break;
         case 'p':
             enablePaint = !enablePaint;
@@ -129,55 +129,55 @@ void dispatch() {
             enableTest = !enableTest;
             break;
         case 'n': //motion
-	    detectionAlg = 'm';
+            detectionAlg = 'm';
             isInit = true;
             break;
         case 'e': //edge
-	    detectionAlg = 'e';
-	    isInit = true;
+            detectionAlg = 'e';
+            isInit = true;
             break;
         case 'd': //diff
-	    detectionAlg = 'd';
+            detectionAlg = 'd';
             isInit = true;
             break;
         case 'o': //off
-	    detectionAlg = 'o';
-            break;		
+            detectionAlg = 'o';
+            break;
         case 'l': //(c)alibrate
-	    detectionAlg = 'c';
-	    isInit = true;
-	    println("(;,') border width, (.,/) border color");
-            break;		
-	case 'b': //calibrate
-	    if(calibForEdge) {
-		calibForEdge = false;
-		println("Calibration Off");
-	    } else if(detectionAlg != 'e')
-		println("Need to be in edge mode for calibration");
-	    else { 
-		calibForEdge = true;
-		debugMode = true;
-		if(!isPI){      
-		    surface.setSize(w*2, h*2);
-		    initOPCGrid = true;
-		}
-		println("Calibration On");
-		println("Calibration : (i)nsert, (r)eset, (l)oad, (s)ave");
-		println("(;,') high thresh adjusment, (.,/) high thresh adjusment");
-	    }
+            detectionAlg = 'c';
+            isInit = true;
+            println("(;,') border width, (.,/) border color");
+            break;
+        case 'b': //calibrate
+            if(calibForEdge) {
+                calibForEdge = false;
+                println("Calibration Off");
+            } else if(detectionAlg != 'e')
+                println("Need to be in edge mode for calibration");
+            else {
+                calibForEdge = true;
+                debugMode = true;
+                if(!isPI){
+                    surface.setSize(w*2, h*2);
+                    initOPCGrid = true;
+                }
+                println("Calibration On");
+                println("Calibration : (i)nsert, (r)eset, (l)oad, (s)ave");
+                println("(;,') high thresh adjusment, (.,/) high thresh adjusment");
+            }
             break;
         }
         lastKey = 0;
         key = 0;
         return;
     }
-    
+
     if(lastKey == 's'){
         switch(key) {
         case 'n':
             minim.stop();
             soundMode = "noSound";
-	    println("Sound Off");
+            println("Sound Off");
             break;
         case 't':
             minim.stop();
@@ -189,9 +189,9 @@ void dispatch() {
             groove = minim.loadFile(songPath);
             groove.loop();
             audioSource = groove;
-	    lowLvl = gLowLvl;
-	    highLvl = gHighLvl;
-	    println("Music On");
+            lowLvl = gLowLvl;
+            highLvl = gHighLvl;
+            println("Music On");
             delay(2000);
             break;
         case 'm':
@@ -199,18 +199,18 @@ void dispatch() {
             soundMode = "mic";
             mic = minim.getLineIn();
             audioSource = mic;
-	    lowLvl = mLowLvl;
-	    highLvl = mHighLvl;	
-	    println("Mic On");
+            lowLvl = mLowLvl;
+            highLvl = mHighLvl;
+            println("Mic On");
             delay(2000);
             break;
         }
-        
+
         lastKey = 0;
         key = 0;
         return;
     }
-    
+
 
     if(lastKey == 'a'){ //adjust
         switch(key) {
@@ -261,13 +261,13 @@ void dispatch() {
             else if(key == 'y')
                 bImgsMat = bImgsMatGray;
             println("Channel Mode " + key);
-            break;          
+            break;
         }
         lastKey = 0;
         key = 0;
         return;
     }
-    
+
 
     switch(key) {
 //    case',':
@@ -285,7 +285,7 @@ void dispatch() {
         break;
     case 'd':
         debugMode = !debugMode;
-        if(!isPI){      
+        if(!isPI){
             if(debugMode){
                 surface.setSize(w*2, h*2);
                 initOPCGrid = true;
@@ -299,8 +299,8 @@ void dispatch() {
         println("Adjust levels: (s)ound, (c)ontour, (t)hreshold, (w)borderWidth, (l)borderLight, (h)ighedgethres l(o)wedgethresh");
         println("Use channel: (r)ed,(g)reen,(b)lue,(y)gray,(m)ax ");
         println("(n)debug background");
-	
-	
+
+
         break;
     case 'p':
         println("Print: (s)ound lvl, (t)hreshold, (e)nergy, (o)neShotPrint ");
@@ -312,7 +312,7 @@ void dispatch() {
         printThreshold = false;
         printSLvl = false;
         printEnergy = false;
-	println("Stop printing");
+        println("Stop printing");
         break;
     case 's':
         println("Sound: (n)one, (g)roove, (m)ic, (t)est ");
@@ -322,12 +322,12 @@ void dispatch() {
         break;
     case 'b':
         blur = !blur;
-	println("Blur ",blur?"On":"Off");
+        println("Blur ",blur?"On":"Off");
         isInit = true;
         break;
     case 't':
             autoThreshold = !autoThreshold;
-	    println("autoThreshold",autoThreshold?"On":"Off");
+            println("autoThreshold",autoThreshold?"On":"Off");
         break;
     case '[':
         switch(tuneMode){
@@ -346,19 +346,19 @@ void dispatch() {
         case 'c':
             minContourSize -= 500;
             println("minContourSize :", minContourSize);
-            break;          
+            break;
         case 's':
             audioGain -= .1;
             println("audioGain :", audioGain);
-            break;          
+            break;
         case 'w':
             if(borderWidth > 0) borderWidth -= 1;
             println("border width:", borderWidth);
-            break;          
+            break;
         case 'l':
             if(borderColor > 0) borderColor -= 10;
             println("border color:", borderColor);
-            break;          
+            break;
         }
         //tuneMode = 0;
         break;
@@ -383,17 +383,17 @@ void dispatch() {
         case 's':
             audioGain += .1;
             println("audioGain :", audioGain);
-            break;          
+            break;
         case 'w':
             borderWidth += 1;
             println("border :", borderWidth);
-            break;          
+            break;
         case 'l':
             if(borderColor < 255) borderColor += 10;
             println("border color:", borderColor);
-            break;          
+            break;
         }
-        //tuneMode = 0; 
+        //tuneMode = 0;
         break;
     case 'q':
         background(0);
@@ -405,16 +405,16 @@ void dispatch() {
             background(0);
         } else {
             loop();
-        }        
+        }
         break;
        default:
         println("(a)djust, (b)lur, ([)decrease, (])increase,(p)rint, (u)nprint, (x)save");
         println("(i)nit, (d)ebug, (s)ound, (v)ideo");
         println("(t)hreshold mode, (z)stop, (q)uit");
 
-	if(calibForEdge) {
-	    println("Calibration : (i)nsert, (r)eset");
-	} 
+        if(calibForEdge) {
+            println("Calibration : (i)nsert, (r)eset");
+        }
         break;
     }
     lastKey = key;
