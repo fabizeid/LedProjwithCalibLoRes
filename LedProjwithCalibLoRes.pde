@@ -1,0 +1,1011 @@
+//TODO make sure there is no leak due to use of get()
+
+final boolean isPI = false; 
+//PIIN
+//import gohai.glvideo.*;
+//PIIN
+//GLVideo video;
+//PIOUT
+import processing.video.*;
+//PIOUT
+Capture video;
+
+import gab.opencv.*;
+import org.opencv.imgproc.Imgproc;
+import org.opencv.core.Size;
+import org.opencv.core.Mat;
+import org.opencv.core.Core;
+import org.opencv.video.BackgroundSubtractorMOG;
+import ddf.minim.*;
+mOpenCV opencv;
+Minim minim;
+AudioPlayer groove;
+AudioInput mic;
+AudioSource audioSource;
+OPC opc;
+PGraphics pg,pgPlot;
+ArrayList<PVector> points;
+final int nBimgs = 2;//13*2;
+Mat[] bImgsMat,bImgsMatR,bImgsMatG,bImgsMatB,bImgsMatGray;
+int [] bImgsEnergy;
+float [] bImgsMean;
+float currentMean;
+int[] lowEdgeT;
+int[] highEdgeT;
+int [] levelColor;
+int [] idxHist;
+final int numlevelColors = 6;
+float calibLvl;
+PImage bimg,paintImg,edgeImg,contImg,diffImg,backImg,inputImg;
+boolean getsnapshot,isInit;
+int initIdx;
+int lastGestureCheck; //ms
+int lastGestureSwitch; //ms
+int gestureState;
+int gestureSweepCount;
+int lastBorderCheck; //ms
+int borderWidth,borderColor,numLedOn,ledIntensity;
+final float gLowLvl = .02;
+final float gHighLvl = .3;
+final float mLowLvl =  0;
+final float mHighLvl = .5;
+float lowLvl,highLvl; 
+BackgroundSubtractorMOG backgroundSubtractor;
+
+//min supported res (also multiple of OPC grid)
+final int h = 180;
+final int w = 120;
+final int vw = 320;
+final int vh = 240;
+final int fRate = 20;
+String ip;
+final int port = 7890;
+final int numStrips = 24;
+final int numLedPerStrip = 60;
+boolean autoThreshold = true;
+float thresh = 44;
+//Flame
+final color from = color(250, 0, 0);
+final color to = color(250, 216, 0);
+//final String songPath = "C:/Users/farid/Desktop/Karen Music/Al Stewart - On The Border.mp3";
+String songPath = "C:/Users/farid/Desktop/Karen Music/Amy McDonald - This Is The Life.mp3";
+//final String songPath = "C:/Users/farid/Desktop/Karen Music/Manu Chao - Desaparecido.mp3";
+//final String songPath = "C:/Users/farid/Desktop/Karen Music/Tarkan - Dudu.mp3";
+String soundMode = "noSound";//groove,mic,noSound
+//final String soundMode = "groove";//groove,mic,noSound
+boolean initOPCGrid = true;
+boolean camMode = false;
+boolean debugMode = false;
+boolean debugBackground = false;
+boolean enableTest = false;
+boolean enablePaint = false;
+boolean enableContour = true;
+boolean stopLoop = false;
+boolean saveContour = false;
+char detectionAlg = 'd'; //(e)dge (m)otion (d)iff (o)ff
+boolean calibForEdge = false;
+boolean blur = false;
+boolean printThreshold = false;
+boolean printSLvl = false;
+boolean printEnergy = false;
+boolean oneShotPrint = false;
+boolean useMeanforBg = true;
+    
+int lowEdgeThresh = 75;
+int highEdgeThresh = 145;
+int contScale = 1;
+int minContourSize = 4000;
+float audioGain = 1;
+final boolean enableGesture = false;
+final int gestureIdx1 = 0;
+final int gestureIdx2 = numLedPerStrip*(numStrips-1);
+final int gestureCheckRate = 1000; //ms
+final int gestureTimeout = 5000; //ms
+final int borderCheckRate = 500; //ms
+char lastKey = 0;
+char tuneMode = 0;
+char channelMode = 0;
+Size ksize = new Size(3,3);
+
+
+void settings(){
+    if(isPI)
+        size(w*2,h*2,P2D);
+    else
+        size(w,h,P2D);
+    noSmooth();
+
+}
+
+void setup() {
+    background(0);
+    pg = createGraphics(w, h);
+    //PIOUT
+    video = new Capture(this, vw,vh);
+    //PIOUT
+    video.start();
+    //PIIN
+    //video = new GLVideo(this, "v4l2src extra-controls=c,brightness=60 ! video/x-raw, width=(int)"+w+", height=(int)"+h+", framerate=20/1", GLVideo.NO_SYNC);
+    //video = new GLVideo(this, "v4l2src extra-controls=c,brightness=60,auto_exposure=1,exposure_time_absolute=262,white_balance_auto_preset=1 ! video/x-raw, width=(int)"+w+", height=(int)"+h+", framerate=20/1", GLVideo.NO_SYNC);
+    //video = new GLVideo(this, "v4l2src ! video/x-raw, width=(int)"+w+", height=(int)"+h+", framerate=20/1", GLVideo.NO_SYNC);
+    
+    //PIIN
+    //video.play();
+       
+    if(isPI){
+        ip = "127.0.0.1";
+    } else {
+        
+        ip = "193.168.16.29";
+    }
+
+    opencv = new mOpenCV(this, w, h);    
+    opc = new OPC(this, ip, port);
+    opc.setInterpolation(false);
+    frameRate(fRate);
+    isInit = true;
+    initIdx = 0;
+    bimg = createImage(w,h,RGB);
+    paintImg = createImage(w,h,RGB);//createBlackImage(w,h);
+    edgeImg = createImage(w,h,ARGB);
+    diffImg  = createImage(w,h,ALPHA);
+    backImg  = createImage(w,h,ALPHA);
+    inputImg  = createImage(w,h,ALPHA);
+    lastGestureCheck = millis();
+    lastBorderCheck = millis();
+    gestureState = 0;
+    lastGestureSwitch = lastGestureCheck;
+    gestureSweepCount = 0;
+    //Start audio
+    minim = new Minim(this);
+    if(soundMode.equals("mic")){
+        mic = minim.getLineIn();
+        audioSource = mic;
+	lowLvl = mLowLvl;
+	highLvl = mHighLvl;
+    }
+    if(soundMode.equals("groove")){
+        groove = minim.loadFile(songPath);
+        groove.loop();
+        audioSource = groove;
+	lowLvl = gLowLvl;
+	highLvl = gHighLvl;
+    }
+    borderWidth = 0;
+    borderColor = 250;
+    ledIntensity = 0;
+    numLedOn = 0;
+    levelColor = new int[numlevelColors];
+    idxHist = new int[numlevelColors];
+    for (int i=0; i<numlevelColors; i++){
+        levelColor[i] = lerpColor(from, to,(float)i/numlevelColors);
+        idxHist[i] = 0;
+    }
+}
+
+void setOPCGrid(){
+    float spacing = h / numLedPerStrip;
+    opc.showLocations(false);
+    opc.reset();
+   // opc.ledGrid(0, numLedPerStrip,numStrips, (float)w/2, (float)h/2,
+   //           spacing, spacing, HALF_PI,false,
+   //             true);
+    opc.ledGrid(0, numLedPerStrip,numStrips, (float)w/2, (float)h/2,
+                spacing, spacing,HALF_PI,false,
+                true);
+
+}
+void draw() {
+
+   if(initOPCGrid) {
+       setOPCGrid();
+       initOPCGrid = false;
+   }
+
+
+   if(isInit){
+       background(0);
+       if(detectionAlg == 'm') {       
+           //opencv.startBackgroundSubtraction(15, 3, 0.5);
+           backgroundSubtractor = new BackgroundSubtractorMOG(15, 3, .5);
+           isInit = false;
+       } else if (detectionAlg == 'd'){
+	   initDiffAlgorithm();
+       } else if (detectionAlg == 'e'){
+	   if(lowEdgeT == null) resetCalibForEdge();
+	   isInit = false;
+       } else if (detectionAlg == 'b'){
+	   if(pgPlot == null)resetCalibrateLED();
+	   isInit = false;
+       } else {
+	   isInit = false;
+       }
+       //if(borderWidth > 0) border();
+       return;
+    }
+   if (video.available() ) {
+       background(0);
+        video.read();
+        if(isPI) {
+            bimg.copy(video,0,0,w,h,0,0,w,h);
+        } else {
+            int croppedW = w*vh/h; 
+            bimg.copy(video,(vw-croppedW)/2,0,croppedW,vh,0,0,w,h);
+        }
+   }
+   //else {
+   //      return;
+   //}
+
+    if (camMode){
+        disp(bimg);
+        return;
+    }
+    float lvl;
+    if(soundMode.equals("noSound")){
+        lvl = 0;
+    } else if(soundMode.equals("test")){
+        lvl = random(0,1);
+        
+    } else {
+        lvl = audioSource.mix.level();
+	lvl =  map( lvl,lowLvl,highLvl,0,1);   
+    }
+    
+    opencv.loadImage(bimg);
+    if(detectionAlg == 'm')
+        runMotionDetectionAlgorithm();
+    else if (detectionAlg == 'e')
+        runEdgeAlgorithm(lvl*audioGain);
+    else if (detectionAlg == 'd')
+        runDiffAlgorithm();
+    else if (detectionAlg == 'c')
+	calibrateLED();
+	
+    if(printSLvl)
+        println("Sound lvl: ",lvl*audioGain);
+
+    //image(opencv.getOutput(),0,0);
+    //if(true) return;
+    if(saveContour){
+        PImage saveImg = opencv.getOutput();
+        saveImg.save("data/initbackground");
+        println("saved background");
+        saveContour = false;
+    }
+    
+    if(enableContour) contourAudio(lvl*audioGain);
+    if(borderWidth > 0) border();
+    /*
+      stroke(0, 0, 255);
+      strokeWeight(3);
+      int lidx = 3*width/8;
+      for(int i = 0; i < audioSource.bufferSize() - 1; i+=4*audioSource.bufferSize()/width)
+      {
+      line(lidx, height-50  + audioSource.mix.get(i)*100,  lidx+1, height - 50+ audioSource.mix.get(i+1)*100);
+      lidx++;
+      }*/
+    //float position = map( audioSource.position(), 0, audioSource.length(), 0, width );
+    //rect( 0, 0, audioSource.mix.level()*width, 100 );
+
+}
+void keyPressed() {
+    delay(100);
+    dispatch();
+}
+
+void resetCalibrateLED(){
+    if(pgPlot == null){
+	pgPlot = createGraphics(w, h);
+    }
+    pgPlot.beginDraw();
+    pgPlot.background(0);
+    pgPlot.stroke(250);
+    pgPlot.strokeWeight(2);
+    pgPlot.endDraw();
+    println("resetCalibrateLED");
+	
+}
+
+void insertPlotData()
+{
+    if(pgPlot == null)resetCalibrateLED();
+    pgPlot.beginDraw();
+    //float x = (float)numLedOn*w/((numStrips-1)*numLedPerStrip*2/3);
+    float x = (float)ledIntensity*w/255;
+    float y = currentMean*h/255;
+    pgPlot.line(x,h,x,h-y);
+    pgPlot.endDraw();
+    println("numLedOn",numLedOn,"ledIntensity",ledIntensity,"currentMean",currentMean);
+}
+void calibrateLED() {
+    if(numLedOn > 0) spread(numLedOn,ledIntensity,numLedPerStrip/3,0);
+    currentMean = (float)Core.mean(opencv.getGray()).val[0];
+    if(debugMode){
+	if(pgPlot == null)resetCalibrateLED();
+	image(pgPlot,w,0);
+    }
+
+
+    
+}
+
+void runMotionDetectionAlgorithm(){
+    //opencv.updateBackground();
+        backgroundSubtractor.apply(opencv.getGray(), opencv.getGray(), 0.0001);
+        if(debugMode){
+            image(opencv.getOutput().get(),w,0);
+        }
+        
+}
+void runEdgeAlgorithm(float lvl){
+    currentMean = (float)Core.mean(opencv.getGray()).val[0];
+    if(oneShotPrint){
+	println(lowEdgeThresh,highEdgeThresh,currentMean);
+	oneShotPrint = false;
+    }
+
+    if(calibForEdge){
+	calibrateForEdge();
+	opencv.findCannyEdges(lowEdgeThresh,highEdgeThresh);
+    } else if(lowEdgeT.length != 0){
+	int i = getMeanIdx(currentMean);
+	//TODO if needed: interpolate between i and i+1 values of thresholds
+	if(printThreshold) println(i,currentMean,bImgsMean[i],lowEdgeT[i],highEdgeT[i]);
+	opencv.findCannyEdges(lowEdgeT[i],highEdgeT[i]);
+    } else {
+	opencv.findCannyEdges(lowEdgeThresh,(int)currentMean);
+    }
+
+    opencv.dilate();
+    if(debugMode){
+        diffImg.copy(opencv.getOutput(),0,0,w,h,0,0,w,h);
+        image(diffImg,0,h);
+    }
+    if(enablePaint) paint();
+    lvl =  map(lvl,0,1,0,numlevelColors);
+    lvl = constrain(lvl,0,numlevelColors);
+    mapToGrid(opencv.getOutput(),edgeImg,(int)round(lvl));
+    //mapToGrid(opencv.getOutput(),edgeImg,0);
+
+}
+
+void resetCalibForEdge(){
+    bImgsMean = new float[0];
+    lowEdgeT = new int[0];
+    highEdgeT = new int[0];
+    println("Resetting Calib Arrays");
+}
+
+void insertAndSortCalibForEdge(){
+    float[] tempM = bImgsMean;
+    int[] tempL = lowEdgeT;
+    int[] tempH = highEdgeT;    
+    bImgsMean = new float[tempM.length+1];
+    lowEdgeT = new int[tempL.length+1];
+    highEdgeT = new int[tempH.length+1];
+    int i, j;
+    boolean notInsterted = true;
+    for(i = 0, j = 0; i<tempM.length;i++,j++){
+	if(notInsterted && currentMean < tempM[i]){
+	    bImgsMean[j] = currentMean;
+	    lowEdgeT[j] = lowEdgeThresh;
+	    highEdgeT[j] = highEdgeThresh;
+	    j++;
+	    notInsterted = false;
+	}
+	
+	bImgsMean[j] = tempM[i];
+	lowEdgeT[j] = tempL[i];
+	highEdgeT[j] = tempH[i];
+    }
+    
+    if(notInsterted) {//not inserted yet
+	bImgsMean[j] = currentMean;
+	lowEdgeT[j] = lowEdgeThresh;
+	highEdgeT[j] = highEdgeThresh;
+    }
+    printArray(bImgsMean);
+    println("inserting ",currentMean,lowEdgeThresh,highEdgeThresh);
+    
+    
+}
+
+void loadCalibForEdge(){
+    Table table = loadTable("edgeCalib.csv", "header");
+    int numRows = table.getRowCount();
+    bImgsMean = new float[numRows];
+    lowEdgeT = new int[numRows];
+    highEdgeT = new int[numRows];
+    int i = 0;
+    for (TableRow row : table.rows()) {
+	bImgsMean[i] = row.getFloat("mean"); 
+	lowEdgeT[i] = row.getInt("lowThresh");
+	highEdgeT[i] = row.getInt("highThresh");
+	i++;
+    }
+    println("Loaded data/edgeCalib.csv");
+    printArray(bImgsMean);
+}
+
+void saveCalibForEdge(){
+    Table table = new Table();        
+    table.addColumn("mean");
+    table.addColumn("lowThresh");
+    table.addColumn("highThresh");
+    TableRow newRow;
+    
+    for( int i = 0; i<lowEdgeT.length;i++){
+	newRow = table.addRow();
+	newRow.setFloat("mean", bImgsMean[i]);
+	newRow.setInt("lowThresh", lowEdgeT[i]);
+	newRow.setInt("highThresh", highEdgeT[i]);
+    }
+    saveTable(table, "data/edgeCalib.csv");
+    println("saving to data/edgeCalib.csv");
+}
+
+    
+void calibrateForEdge(){
+    
+}
+
+void runDiffAlgorithm(){
+
+    int i;
+    if(useMeanforBg)
+	i = getMeanIdx(opencv.getGray());
+    else
+	i = getBackgroundEnergyIdx(); 
+    
+    if(channelMode == 'm'){
+        if(blur){
+            Imgproc.GaussianBlur(opencv.getR(), opencv.getR(), ksize, 2, 2);
+            Imgproc.GaussianBlur(opencv.getG(), opencv.getG(), ksize, 2, 2);
+            Imgproc.GaussianBlur(opencv.getB(), opencv.getB(), ksize, 2, 2);
+        }
+        mOpenCV.diff(opencv.getR(),bImgsMatR[i]);
+        mOpenCV.diff(opencv.getG(),bImgsMatG[i]);
+        mOpenCV.diff(opencv.getB(),bImgsMatB[i]);           
+        Core.max(opencv.getR(),opencv.getG(),opencv.getGray());
+        Core.max(opencv.getGray(),opencv.getB(),opencv.getGray());                      
+    } else {
+        switch(channelMode){
+        case 'r':
+            opencv.setGray(opencv.getR());
+            //mOpenCV.diff(opencv.getGray(),bImgsMat[i]);
+            break;
+        case 'g':
+            opencv.setGray(opencv.getG());
+            break;
+        case 'b':
+            opencv.setGray(opencv.getB());
+            break;
+        }
+        if(blur){
+            Imgproc.GaussianBlur(opencv.getGray(), opencv.getGray(), ksize, 2, 2);
+        }
+        if(debugMode){
+            inputImg.copy(opencv.getOutput(),0,0,w,h,0,0,w,h);
+            image(inputImg,w,0);
+        }
+
+        //bimg = bImgs[i];
+        //opencv.diff(bimg);
+        //    if(channelMode == 'o'){ //color 
+        //      mOpenCV.diff(opencv.matBGRA,bImgsMat[i]);
+        //      //matBGRA holds the diff, convert to gray
+        //      //TODO: possible instead of converting to gray just
+        //      //diff and threshold on each channel independently
+        //      //then merge the channels by adding the them,   
+        //      opencv.gray(); 
+        //    } else
+        mOpenCV.diff(opencv.getGray(),bImgsMat[i]);
+    }
+    if(debugMode)
+//      if(debugBackground){
+//          image(opencv.getSnapshot(bImgsMat[i]),0,h);
+//      } else {
+        diffImg.copy(opencv.getOutput(),0,0,w,h,0,0,w,h);
+            image(diffImg,0,h);
+//      }
+    //opencv.gray();
+    if(autoThreshold) {
+    //TODO cutoff should depend on luminosity
+        thresh = opencv.thresholdret();
+        if(printThreshold){
+            println("Threshold lvl:  ",thresh);
+        }
+        //if (thresh < 30) return;
+    } else {
+        opencv.threshold((int)thresh);
+    }
+    if(debugMode){
+        if(debugBackground){
+            opencv.toPImage(bImgsMat[i],backImg);
+            image(backImg,w,h);
+        } else {
+            image(opencv.getOutput(),w,h);
+        }
+    }
+    opencv.dilate();
+    opencv.erode();
+    if(enablePaint) paint();
+}
+
+
+
+PImage createBlackImage(int myWidth, int myHeight){
+    PImage bimg;
+    bimg = createImage(myWidth,myHeight,RGB);
+    bimg.loadPixels();
+    for (int i = 0; i < bimg.pixels.length; i++) {
+        bimg.pixels[i] = color(0);
+    }
+    bimg.updatePixels();
+    return  bimg;
+}
+
+
+void mapToGrid(PImage img){
+    int picIdx,imgPicIdx,pixel;
+    int numPixels = opc.pixelLocations.length;
+    color c = color(255,0,0);
+    loadPixels();
+    img.loadPixels();
+    for (int i = 0; i < numPixels; i++) {
+        picIdx = opc.pixelLocations[i];
+        imgPicIdx = picIdx-(width-img.width)*(picIdx/width);
+        pixel = img.pixels[imgPicIdx];
+        if(pixel == 0xFFFFFFFF)
+            pixels[picIdx] = c;
+    }
+    updatePixels();
+}
+void mapToGrid(PImage imgSrc,PImage imgDest,int lvl){
+    int picIdx,imgPicIdx,pixel;
+    int circIdx = 0;
+    int numPixels = opc.pixelLocations.length;
+    setColorMode("RGB");
+    color c = color(255,0,0);
+    imgDest.loadPixels();
+    imgSrc.loadPixels();
+    //println(pixels.length,img.pixels.length);
+    for (int i = 0; i < numPixels; i++) {
+        picIdx = opc.pixelLocations[i];
+        imgPicIdx = picIdx-(width-imgSrc.width)*(picIdx/width);
+        pixel = imgSrc.pixels[imgPicIdx];
+        if(pixel == 0xFFFFFFFF){
+            imgDest.pixels[imgPicIdx] = 0xFFFF0000;//levelColor[0];//0xFFFF0000;
+            for (int j=0; j<lvl ;j++) {
+                int curIdx = (circIdx-j/2);
+                if (curIdx < 0) curIdx += numlevelColors;
+                int histIdx = idxHist[curIdx];
+                imgDest.pixels[histIdx] = levelColor[j];
+
+                //imgDest.pixels[idxHist[(circIdx-j)%numlevelColors]]
+                //    = levelColor[j];
+            }
+            
+        } else {
+	      imgDest.pixels[imgPicIdx] = 0x00000000;
+        }
+        
+        circIdx = (circIdx+1)%numlevelColors;
+        idxHist[circIdx] = imgPicIdx;
+        
+    }
+    imgDest.updatePixels();
+    disp(imgDest);
+}
+
+void spread(int numLed, int intensity,int startRow, int startCol){
+    int picIdx;
+    int numPix = opc.pixelLocations.length;
+    loadPixels();
+    int y = startRow;//numLedPerStrip/2;
+    int x = startCol;
+    for (int j = 0; j < numLed;j++)
+        {
+	    //println(numPix,y,x,y + numLedPerStrip*x);
+	    
+	    picIdx = opc.pixelLocations[ y + numLedPerStrip*x];
+            pixels[picIdx] = color(intensity);
+            if(++x ==  numStrips) {
+                x = 0;
+                y++;
+            } 
+        }
+    updatePixels();
+
+}
+void border(){
+    border('r');
+}
+void border(char col){
+    //int now = millis();
+    float spacing = h / numLedPerStrip;
+    int picIdx = opc.pixelLocations[0];
+    strokeWeight((2*borderWidth-1)*spacing+1); // 2-4,3-7,4-10
+    
+    if(col == 'r')
+        stroke(borderColor, 0, 0);
+    else
+        stroke(borderColor, borderColor, borderColor);  
+    noFill();
+    int xr = picIdx % width;
+    int yr = picIdx / width;
+    int wr = (int)spacing*(numStrips-1)+1;
+    int hr = (int)spacing*(numLedPerStrip-1)+1;
+    circle(w/2,h/2,w/4);
+
+    //rect(xr,yr,wr,hr);
+    //line(xr,yr,xr+wr,yr);
+    //line(xr,yr+hr,xr+wr,yr+hr);
+}
+void paint(){
+    setColorMode("HSB");
+    PImage pic = opencv.getOutput();
+    int pixel;
+    pic.loadPixels();
+    paintImg.loadPixels();
+    float hue = (millis() * .1) % 360;
+    color c = color(hue, 50,200);
+    int numPixels = opc.pixelLocations.length;
+    int picIdx;
+    for (int i = 0; i < numPixels; i++) { //loop over grid instead of looping everything
+        picIdx = opc.pixelLocations[i];
+        picIdx = picIdx-(width-pic.width)*(picIdx/width);
+        //picIdx = picIdx % width + pic.width*(picIdx / width);
+        pixel = pic.pixels[picIdx];
+        if(pixel == 0xFFFFFFFF) {
+            pixel = c;
+	    //pixel = 0xFF00FFFF;
+            if (enableGesture && (i == gestureIdx1 || i == gestureIdx2)) {
+                checkGesture(i,true);
+                pixel = 0xFFFFFFFF;
+            }
+
+        } else {
+            pixel = paintImg.pixels[picIdx];
+            if(brightness(pixel) != 0){
+                pixel = color(hue(pixel),saturation(pixel),brightness(pixel)-5);
+            }
+            if (enableGesture && (i == gestureIdx1 || i == gestureIdx2)) {
+                checkGesture(i,false);
+                pixel = 0xFFFFFFFF;
+            }
+        }
+        paintImg.pixels[picIdx] = pixel;
+    }
+    paintImg.updatePixels();
+    disp(paintImg);
+}
+
+void checkGesture(int pixIdx,boolean pixelOn){
+    int now = millis();
+    if(now < lastGestureCheck + gestureCheckRate) return;
+    if(pixIdx == gestureIdx2) lastGestureCheck = now;
+
+    switch (gestureState) {
+    case 0: // init
+        if (pixIdx == gestureIdx1 && pixelOn){
+            gestureState = 1;
+            lastGestureSwitch = now;
+            println(gestureState);
+        }
+        break;
+    case 1:
+        if (pixIdx == gestureIdx1 && !pixelOn){
+            gestureState = 2;
+            lastGestureSwitch = now;
+            println(gestureState);
+        }
+        break;
+    case 2:
+        if (pixIdx == gestureIdx2 && pixelOn){
+            gestureState = 3;
+            lastGestureSwitch = now;
+            println(gestureState);
+        }
+        break;
+    case 3:
+        if (pixIdx == gestureIdx2 && !pixelOn){
+            gestureState = 0;
+            if(gestureSweepCount++ == 3){
+                gestureSweepCount = 0;
+                enableContour = !enableContour;
+                println("trigger");
+            }
+            println("count",gestureSweepCount);
+
+        }
+        break;
+    default:
+        break;
+    }
+    if(gestureState != 0 && now > lastGestureSwitch + gestureTimeout) {
+        gestureState = 0;
+        gestureSweepCount = 0;
+        println("gesture timout");
+    }
+}
+void contourAudio(float lvl) {
+    setColorMode("RGB");
+    pg.beginDraw();
+    pg.noFill();
+    getsnapshot = false;
+    
+    if(lvl > 1) {
+        pg.stroke(250,250,250);
+        getsnapshot = true;
+        pg.strokeWeight(4);
+    }
+    else if(lvl < .2){
+        pg.stroke(250,0,0);
+        pg.strokeWeight(2);
+    }
+    else{
+        pg.stroke(lerpColor(from, to,lvl));
+        pg.strokeWeight(1+lvl*9);
+    }
+
+
+    pg.background(0,0);
+    pg.tint(255, 250);
+    if(contImg != null)
+        pg.image(contImg,-3,-5,pg.width+7,pg.height+7);
+    if(!getsnapshot) contImg = pg.get();//get img before current contour
+    Mat tempMat = opencv.getGray();
+    if(contScale > 1)
+        Imgproc.resize(opencv.getGray(),opencv.getGray(),new Size(),contScale,contScale,Imgproc.INTER_LINEAR);
+//    if(debugMode){
+//      image(opencv.getSnapshot(),w,h);
+//    }
+
+    for (Contour contour : opencv.findContours()) {
+        if (contour.area() > minContourSize) {
+            points = contour.getPoints();
+            pg.beginShape();
+            for (PVector p : points) {
+                 pg.vertex(p.x/contScale, p.y/contScale);
+                //pg.vertex(p.x, p.y);          
+            }
+            pg.endShape(PConstants.CLOSE);
+        }
+    }
+    //if(contScale > 1) opencv.matGray = tempMat;
+    pg.endDraw();
+    if(getsnapshot) contImg = pg.get(); //get img after contour
+    disp(contImg);
+    disp(pg);
+}
+
+void setColorMode(String mode) {
+    if(mode.equals("HSB")){
+        colorMode(HSB, 360,100,500);
+    } else {
+        colorMode(RGB, 255,255,255);
+    }
+}
+
+void disp(PImage vid) {
+    //if(xflip)
+    //      image(vid, 0, 0,width,height,width,0,0,height );
+    //  else
+    image(vid,0,0);
+    //float dispScale = .9;
+    //image(vid,w*(1-dispScale)/2,h*(1-dispScale)/2,w*dispScale,h*dispScale);
+}
+
+void initDiffAlgorithm(){
+    if (!video.available() ){
+        delay(10);
+        return;
+    }
+
+    video.read();
+    if(isPI) {
+        bimg = video;
+    } else {
+        bimg = video.get();
+        bimg.resize(w,h);
+        int croppedW = w*vh/h; 
+        bimg.copy(video.get(),(vw-croppedW)/2,0,croppedW,vh,0,0,w,h);
+
+    }
+
+    final int initCount = 10;
+    //Ramping up picam to get the first image
+    if (initIdx < initCount){
+        initIdx++;
+        delay(10);
+        return;
+    }
+
+    if (initIdx == initCount){
+        calibLvl = 0;
+    }
+    
+    if (initIdx < initCount + nBimgs) {
+        int i = initIdx - initCount;
+        
+        if (initIdx == initCount) {
+            //get array of baseline backgrounds
+            //with increasing luminosity
+            bImgsEnergy = new int[nBimgs];
+	    bImgsMean = new float[nBimgs];
+            bImgsMatR = new Mat[nBimgs];
+            bImgsMatG = new Mat[nBimgs];
+            bImgsMatB = new Mat[nBimgs];
+            bImgsMatGray = new Mat[nBimgs];
+            bImgsMat = bImgsMatGray;
+            
+        }
+
+        initIdx++;
+        spread((int)calibLvl,250,numLedPerStrip/2,0);
+        //background(calibLvl);
+        //borderWidth = (int)calibLvl;
+        //if(borderWidth > 0) border('r');
+        delay(500);
+        opencv.loadImage(bimg);
+        bImgsMatGray[i] = mOpenCV.imitate(opencv.getGray());
+        opencv.getGray().assignTo(bImgsMatGray[i]);
+        if(debugMode){
+            image(opencv.getOutput().get(),w,h);
+        }
+        bImgsEnergy[i] = opc.getLEDEnergy();
+	bImgsMean[i] = (float)Core.mean(opencv.getGray()).val[0];
+        println(bImgsEnergy[i],bImgsMean[i],calibLvl);
+        calibLvl += numStrips;//10/nBimgs;
+        if(true) return;
+
+        /******************************************/
+        PImage calibImg =loadImage("initbackground.tif");
+        opencv.loadImage(calibImg);
+
+	bImgsEnergy[i] = opc.getLEDEnergy();
+	bImgsMean[i] = (float)Core.mean(opencv.getGray()).val[0];
+        println(bImgsEnergy[i],bImgsMean[i]);
+	
+        // last contour is not recorded
+        // float l = map((float)i/(nBimgs-2),0,1,0,1.4);   
+        contourAudio(.2+calibLvl);
+        calibLvl += .1;
+        delay(500);
+        //Current camera snapshot corresponds to previous
+        //contour update. Since LED screen is updated after draw function                 
+        opencv.loadImage(bimg);
+        //new Mat(m.height(), m.width(), m.type());
+        bImgsMatR[i] = mOpenCV.imitate(opencv.getR());
+        bImgsMatG[i] = mOpenCV.imitate(opencv.getG());
+        bImgsMatB[i] = mOpenCV.imitate(opencv.getB());
+        bImgsMatGray[i] = mOpenCV.imitate(opencv.getGray());
+        if(blur){
+            Imgproc.GaussianBlur(opencv.getR(), bImgsMatR[i], ksize, 2, 2);
+            Imgproc.GaussianBlur(opencv.getG(), bImgsMatG[i], ksize, 2, 2);
+            Imgproc.GaussianBlur(opencv.getB(), bImgsMatB[i], ksize, 2, 2);
+            Imgproc.GaussianBlur(opencv.getGray(), bImgsMatGray[i], ksize, 2, 2);
+        } else {
+            opencv.getR().assignTo(bImgsMatR[i]);
+            opencv.getG().assignTo(bImgsMatG[i]);
+            opencv.getB().assignTo(bImgsMatB[i]);
+            opencv.getGray().assignTo(bImgsMatGray[i]);
+        }
+
+        if(debugMode){
+            image(opencv.getOutput().get(),w,h);
+        }
+
+        //bImgsMatBGRA[i] = mOpenCV.imitate(opencv.matBGRA);
+        //opencv.matBGRA.assignTo(bImgsMatBGRA[i]);
+        return;
+    }    
+    //sort energy and mean levels and backgrounds
+    sortBackgrounds();
+    initIdx = 0;
+    isInit = false;
+}
+
+int getMeanIdx(float meanVal){
+    //Used for selectoin thesholds of Edgedetector
+    //pick the element that's below the meanVal (don't pick closest)
+    //that's assuming that calibration started from low mean to high mean
+    int i = 1;
+    while(i < bImgsMean.length && meanVal > bImgsMean[i]){
+	i++;
+    }
+    return i - 1;
+}
+int getMeanIdx(Mat currentImg){
+    float currentMean = (float)Core.mean(currentImg).val[0];
+    int i = 1;
+    
+    while(currentMean > bImgsMean[i]){
+        i++;
+        if(i == bImgsMean.length) {
+            if(printEnergy){int idx = i-1; println(currentMean +" "+(bImgsMean[idx]-currentMean)+ " " + idx +" " + bImgsMean[idx]);}
+            // println(currentMean,i-1);
+            return i-1;
+        }
+    }
+    if((bImgsMean[i]-currentMean) > (currentMean - bImgsMean[i-1])){ 
+        //println(currentMean,i-1);
+        if(printEnergy){int idx = i-1; println(currentMean +" "+ (bImgsMean[idx]-currentMean)+ " " + idx +" " + bImgsMean[idx] + " " +bImgsMean[i]);}
+
+        return i-1;
+    } else {
+        //println(currentMean,i);
+        if(printEnergy){int idx = i; println(currentMean +" "+ (bImgsMean[idx]-currentMean)+ " " + idx +" " + bImgsMean[idx-1] + " " +bImgsMean[idx]);}
+        return i;
+    }
+}
+
+int getBackgroundEnergyIdx(){
+    int currentEnergy = opc.getLEDEnergy();
+    int i = 1;
+    
+    while(currentEnergy > bImgsEnergy[i]){
+        i++;
+        if(i == bImgsEnergy.length) {
+            if(printEnergy){int idx = i-1; println(currentEnergy +" "+(bImgsEnergy[idx]-opc.getLEDEnergy())+ " " + idx +" " + bImgsEnergy[idx]);}
+            // println(currentEnergy,i-1);
+            return i-1;
+        }
+    }
+    if((bImgsEnergy[i]-currentEnergy) > (currentEnergy - bImgsEnergy[i-1])){ 
+        //println(currentEnergy,i-1);
+        if(printEnergy){int idx = i-1; println(currentEnergy +" "+ (bImgsEnergy[idx]-opc.getLEDEnergy())+ " " + idx +" " + bImgsEnergy[idx] + " " +bImgsEnergy[i]);}
+
+        return i-1;
+    } else {
+        //println(currentEnergy,i);
+        if(printEnergy){int idx = i; println(currentEnergy +" "+ (bImgsEnergy[idx]-opc.getLEDEnergy())+ " " + idx +" " + bImgsEnergy[idx-1] + " " +bImgsEnergy[idx]);}
+        return i;
+    }
+}
+
+public class mOpenCV extends OpenCV{
+    public mOpenCV(PApplet theParent, int width, int height) {
+      super( theParent, width, height);
+    }
+    public float thresholdret() {
+    return (float)(Imgproc.threshold(matGray, matGray, 0, 255, Imgproc.THRESH_BINARY | Imgproc.THRESH_OTSU)); 
+    }
+}
+void getChannel(PImage in, PImage out, int mask){
+     
+    //bimg = createImage(in.width,in.height,RGB);
+    
+    in.loadPixels();
+    out.loadPixels();
+     for (int i = 0; i < in.pixels.length; i++) {
+         out.pixels[i] = in.pixels[i] & mask;//& 0x0000FF;
+    }
+     out.updatePixels();
+    
+}
+
+void sortBackgrounds(){
+
+    // Sort int bImgsEnergy ,float bImgsMean, Mat bImgsMatGray
+    float tempMean;
+    Mat tempImgs;
+    if(useMeanforBg) { // else sort by energy
+	for(int i = 1; i < bImgsMean.length; i++){
+	    for (int j = i; j > 0; j --){
+		if(bImgsMean[j] < bImgsMean[j-1]){
+		    //swap
+		    tempMean = bImgsMean[j];
+		    bImgsMean[j] = bImgsMean[j-1];
+		    bImgsMean[j-1] = tempMean;
+		    tempImgs = bImgsMatGray[j];
+		    bImgsMatGray[j] = bImgsMatGray[j-1];
+		    bImgsMatGray[j-1] = tempImgs;
+		
+		}
+	    }	
+	}
+    }
+}
