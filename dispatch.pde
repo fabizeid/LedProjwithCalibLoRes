@@ -1,0 +1,422 @@
+char menuState = 't'; // (t)op level, (s)ound, (v)ideo
+
+void dispatch2() {
+
+    switch(menuState){
+    case 't':
+	println("t");
+	break;		
+    }
+
+}
+
+void dispatch() {
+
+    if (detectionAlg == 'c'){
+	switch(key) {
+	case 'i': //insert plot point
+	    insertPlotData();
+	    lastKey = 0;
+	    return;
+	case 'r': //reset 	    
+	    resetCalibrateLED();
+	    lastKey = 0;
+	    return;
+        case ';':
+            if(numLedOn >= numStrips) numLedOn -= numStrips;
+            println("numLedOn:", numLedOn);
+	    lastKey = 0;
+	    return;
+        case '.':
+            if(ledIntensity >= 10) ledIntensity -= 10;
+            println("Led intensity:", ledIntensity);
+	    lastKey = 0;
+	    return;
+        case '\'':
+            if(numLedOn < (numStrips-1)*numLedPerStrip*2/3) numLedOn += numStrips;
+            println("numLedOn:", numLedOn);
+	    lastKey = 0;
+	    return;
+        case '/':
+	    if(ledIntensity < 245) ledIntensity += 10;
+            println("Led intensity:", ledIntensity);
+	    lastKey = 0;
+	    return;
+	}
+
+    }
+
+    if(calibForEdge && detectionAlg == 'e'){
+	switch(key) {
+	case 'l': //load to array
+	    loadCalibForEdge();
+	    lastKey = 0;
+	    return;
+	case 's': //save to file
+	    saveCalibForEdge();
+	    lastKey = 0;
+	    return;
+	case 'i': //insert to array
+	    insertAndSortCalibForEdge();
+	    lastKey = 0;
+	    return;
+	case 'r': //reset calibration array	    
+	    resetCalibForEdge();
+	    lastKey = 0;
+	    return;
+        case ';':
+            highEdgeThresh -= 5;
+	    lastKey = 0;
+            println("highEdgeThresh :", highEdgeThresh);
+	    return;
+        case '.':
+            lowEdgeThresh -= 5;
+	    lastKey = 0;
+            println("lowEdgeThresh :", lowEdgeThresh);
+	    return;
+        case '\'':
+            highEdgeThresh += 5;
+	    lastKey = 0;
+            println("highEdgeThresh :", highEdgeThresh);
+	    return;
+        case '/':
+            lowEdgeThresh += 5;
+	    lastKey = 0;
+            println("lowEdgeThresh :", lowEdgeThresh);
+	    return;
+	}
+	
+    }
+
+    if(lastKey == 'p'){
+        switch(key) {
+        case 't':
+            printThreshold = !printThreshold; 
+            break;
+        case 's':
+            printSLvl = !printSLvl; 
+            break;
+        case 'e':
+            printEnergy = !printEnergy; 
+            break;
+        case 'o':
+            oneShotPrint = true; 
+            break;
+        }
+        
+        lastKey = 0;
+        key = 0;
+        return;
+    }
+
+
+    if(lastKey == 'v'){
+        switch(key) {
+        case 'm':
+            camMode = !camMode;
+            break;
+        case 'c':
+            enableContour = !enableContour;
+	    println("Contour",enableContour?"On":"Off");
+            break;
+        case 'p':
+            enablePaint = !enablePaint;
+            println("Paint",enablePaint?"On":"Off");
+            break;
+        case 't':
+            enableContour = false;
+            enablePaint = false;
+            enableTest = !enableTest;
+            break;
+        case 'n': //motion
+	    detectionAlg = 'm';
+            isInit = true;
+            break;
+        case 'e': //edge
+	    detectionAlg = 'e';
+	    isInit = true;
+            break;
+        case 'd': //diff
+	    detectionAlg = 'd';
+            isInit = true;
+            break;
+        case 'o': //off
+	    detectionAlg = 'o';
+            break;		
+        case 'l': //(c)alibrate
+	    detectionAlg = 'c';
+	    isInit = true;
+	    println("(;,') border width, (.,/) border color");
+            break;		
+	case 'b': //calibrate
+	    if(calibForEdge) {
+		calibForEdge = false;
+		println("Calibration Off");
+	    } else if(detectionAlg != 'e')
+		println("Need to be in edge mode for calibration");
+	    else { 
+		calibForEdge = true;
+		debugMode = true;
+		if(!isPI){      
+		    surface.setSize(w*2, h*2);
+		    initOPCGrid = true;
+		}
+		println("Calibration On");
+		println("Calibration : (i)nsert, (r)eset, (l)oad, (s)ave");
+		println("(;,') high thresh adjusment, (.,/) high thresh adjusment");
+	    }
+            break;
+        }
+        lastKey = 0;
+        key = 0;
+        return;
+    }
+    
+    if(lastKey == 's'){
+        switch(key) {
+        case 'n':
+            minim.stop();
+            soundMode = "noSound";
+	    println("Sound Off");
+            break;
+        case 't':
+            minim.stop();
+            soundMode = "test";
+            break;
+        case 'g':
+            minim.stop();
+            soundMode = "groove";
+            groove = minim.loadFile(songPath);
+            groove.loop();
+            audioSource = groove;
+	    lowLvl = gLowLvl;
+	    highLvl = gHighLvl;
+	    println("Music On");
+            delay(2000);
+            break;
+        case 'm':
+            minim.stop();
+            soundMode = "mic";
+            mic = minim.getLineIn();
+            audioSource = mic;
+	    lowLvl = mLowLvl;
+	    highLvl = mHighLvl;	
+	    println("Mic On");
+            delay(2000);
+            break;
+        }
+        
+        lastKey = 0;
+        key = 0;
+        return;
+    }
+    
+
+    if(lastKey == 'a'){ //adjust
+        switch(key) {
+        case 'n':
+            debugBackground = !debugBackground;
+            println("debug background");
+            break;
+        case 'c':
+            tuneMode = 'c';
+            println("Adjust Contour");
+            break;
+        case 't':
+            tuneMode = 't';
+            println("Adjust Threshold");
+            break;
+        case 's':
+            tuneMode = 's'; //adjust sound
+            println("Adjust sound");
+            break;
+        case 'w':
+            tuneMode = 'w'; //adjust sound
+            println("Adjust border width");
+            break;
+        case 'l':
+            tuneMode = 'l'; //adjust sound
+            println("Adjust border light");
+            break;
+        case 'h':
+            tuneMode = 'h'; //adjust sound
+            println("Adjust highEdgeThresh");
+            break;
+        case 'o':
+            tuneMode = 'o'; //adjust sound
+            println("Adjust lowEdgeThresh");
+            break;
+        case 'r':
+        case 'g':
+        case 'b':
+        case 'y':
+        case 'm':
+            channelMode = key;
+            if(key == 'r')
+                bImgsMat = bImgsMatR;
+            else if(key == 'g')
+                bImgsMat = bImgsMatG;
+            else if(key == 'b')
+                bImgsMat = bImgsMatB;
+            else if(key == 'y')
+                bImgsMat = bImgsMatGray;
+            println("Channel Mode " + key);
+            break;          
+        }
+        lastKey = 0;
+        key = 0;
+        return;
+    }
+    
+
+    switch(key) {
+//    case',':
+//      contScale -= 1;
+//      println("contScale "+contScale);
+//      break;
+//    case'.':
+//      contScale += 1;
+//      println("contScale "+contScale);
+//      break;
+    case 'i':
+        println("Init");
+        delay(4000);
+        isInit = true;
+        break;
+    case 'd':
+        debugMode = !debugMode;
+        if(!isPI){      
+            if(debugMode){
+                surface.setSize(w*2, h*2);
+                initOPCGrid = true;
+            } else {
+                surface.setSize(w, h);
+                initOPCGrid = true;
+            }
+        }
+        break;
+    case 'a':
+        println("Adjust levels: (s)ound, (c)ontour, (t)hreshold, (w)borderWidth, (l)borderLight, (h)ighedgethres l(o)wedgethresh");
+        println("Use channel: (r)ed,(g)reen,(b)lue,(y)gray,(m)ax ");
+        println("(n)debug background");
+	
+	
+        break;
+    case 'p':
+        println("Print: (s)ound lvl, (t)hreshold, (e)nergy, (o)neShotPrint ");
+        break;
+    case 'v':
+        println("Video: (m)onitor, (p)aint, (c)ontour, (t)est, , motio(n) detection mode, (e)dge detection, cali(b)rate Edge, ca(l)ibrate LED, (d)iff, (o)ff ");
+        break;
+    case 'u':
+        printThreshold = false;
+        printSLvl = false;
+        printEnergy = false;
+	println("Stop printing");
+        break;
+    case 's':
+        println("Sound: (n)one, (g)roove, (m)ic, (t)est ");
+        break;
+    case 'x':
+        //saveContour = true;
+        break;
+    case 'b':
+        blur = !blur;
+	println("Blur ",blur?"On":"Off");
+        isInit = true;
+        break;
+    case 't':
+            autoThreshold = !autoThreshold;
+	    println("autoThreshold",autoThreshold?"On":"Off");
+        break;
+    case '[':
+        switch(tuneMode){
+        case 'h':
+            highEdgeThresh -= 5;
+            println("highEdgeThresh :", highEdgeThresh);
+            break;
+        case 'o':
+            lowEdgeThresh -= 5;
+            println("lowEdgeThresh :", lowEdgeThresh);
+            break;
+        case 't':
+            thresh -= 1;
+            println("Threshold :", thresh);
+            break;
+        case 'c':
+            minContourSize -= 500;
+            println("minContourSize :", minContourSize);
+            break;          
+        case 's':
+            audioGain -= .1;
+            println("audioGain :", audioGain);
+            break;          
+        case 'w':
+            if(borderWidth > 0) borderWidth -= 1;
+            println("border width:", borderWidth);
+            break;          
+        case 'l':
+            if(borderColor > 0) borderColor -= 10;
+            println("border color:", borderColor);
+            break;          
+        }
+        //tuneMode = 0;
+        break;
+    case ']':
+        switch(tuneMode){
+        case 'h':
+            highEdgeThresh += 5;
+            println("highEdgeThresh :", highEdgeThresh);
+            break;
+        case 'o':
+            lowEdgeThresh += 5;
+            println("lowEdgeThresh :", lowEdgeThresh);
+            break;
+        case 't':
+            thresh += 1;
+            println("Threshold :", thresh);
+            break;
+        case 'c':
+            minContourSize += 500;
+            println("minContourSize :", minContourSize);
+            break;
+        case 's':
+            audioGain += .1;
+            println("audioGain :", audioGain);
+            break;          
+        case 'w':
+            borderWidth += 1;
+            println("border :", borderWidth);
+            break;          
+        case 'l':
+            if(borderColor < 255) borderColor += 10;
+            println("border color:", borderColor);
+            break;          
+        }
+        //tuneMode = 0; 
+        break;
+    case 'q':
+        background(0);
+        exit();
+    case 'z':
+        stopLoop = !stopLoop;
+        if(stopLoop){
+            noLoop();
+            background(0);
+        } else {
+            loop();
+        }        
+        break;
+       default:
+        println("(a)djust, (b)lur, ([)decrease, (])increase,(p)rint, (u)nprint, (x)save");
+        println("(i)nit, (d)ebug, (s)ound, (v)ideo");
+        println("(t)hreshold mode, (z)stop, (q)uit");
+
+	if(calibForEdge) {
+	    println("Calibration : (i)nsert, (r)eset");
+	} 
+        break;
+    }
+    lastKey = key;
+    key = 0;
+}
