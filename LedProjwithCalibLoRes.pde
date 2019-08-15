@@ -29,17 +29,15 @@ PGraphics pg,pgPlot;
 ArrayList<PVector> points;
 final int nBimgs = 2;//13*2;
 Mat[] bImgsMat,bImgsMatR,bImgsMatG,bImgsMatB,bImgsMatGray;
+Mat matToFilter;
 PImage ROIImg;
 MatOfDouble mean;
 MatOfDouble std;
 final int[] ROIRange = {0,2};
 int [] bImgsEnergy;
-float [] bImgsMean;
+float [] bImgsMean,meanForT;
 float currentMean;
-int[] lowEdgeT;
-int[] highEdgeT;
-int [] levelColor;
-int [] idxHist;
+int[] lowEdgeT,highEdgeT,levelColor,idxHist;
 final int numlevelColors = 6;
 float calibLvl;
 PImage bimg,paintImg,edgeImg,contImg,diffImg,backImg,inputImg;
@@ -69,7 +67,6 @@ final int port = 7890;
 final int numStrips = 24;
 final int numLedPerStrip = 60;
 boolean autoThreshold = true;
-float thresh = 44;
 //Flame
 final color from = color(250, 0, 0);
 final color to = color(250, 216, 0);
@@ -88,7 +85,7 @@ boolean enablePaint = false;
 boolean enableContour = true;
 boolean stopLoop = false;
 boolean saveContour = false;
-char detectionAlg = 'd'; //(e)dge (m)otion (d)iff (o)ff
+char detectionAlg = 'e'; //(e)dge (m)otion (d)iff (o)ff
 boolean calibForEdge = false;
 boolean blur = false;
 boolean printThreshold = false;
@@ -97,10 +94,10 @@ boolean printEnergy = false;
 boolean oneShotPrint = false;
 boolean useMeanforBg = true;
 
-int lowEdgeThresh = 75;
-int highEdgeThresh = 145;
+int lowThresh;
+int highThresh;
 int contScale = 1;
-int minContourSize = 4000;
+int minContourSize = 3000;
 float audioGain = 1;
 final boolean enableGesture = false;
 final int gestureIdx1 = 0;
@@ -182,7 +179,8 @@ void setup() {
         highLvl = gHighLvl;
     }
     borderWidth = 0;
-    borderColor = 250;
+    //borderColor = 250;
+    borderColor = 0;
     ledIntensity = 0;
     numLedOn = 0;
     levelColor = new int[numlevelColors];
@@ -201,7 +199,7 @@ void setOPCGrid(){
    //           spacing, spacing, HALF_PI,false,
    //             true);
     opc.ledGrid(0, numLedPerStrip,numStrips, (float)w/2, (float)h/2,
-                spacing, spacing,HALF_PI,false,
+                spacing, spacing,-HALF_PI,false,
                 true);
 
 }
@@ -222,7 +220,10 @@ void draw() {
        } else if (detectionAlg == 'd'){
            initDiffAlgorithm();
        } else if (detectionAlg == 'e'){
-           if(lowEdgeT == null) resetCalibForEdge();
+           resetCalibForEdge();
+           lowThresh = 75;
+           highThresh = 145;
+           matToFilter = mOpenCV.imitate(opencv.getGray());
            isInit = false;
        } else if (detectionAlg == 'b'){
            if(pgPlot == null)resetCalibrateLED();
@@ -286,6 +287,7 @@ void draw() {
     }
 
     if(enableContour) contourAudio(lvl*audioGain);
+    if(numLedOn > 0) spread(numLedOn,ledIntensity,numLedPerStrip/3,0);
     if(borderWidth > 0) border();
     /*
       stroke(0, 0, 255);
@@ -330,7 +332,7 @@ void insertPlotData()
     println("numLedOn",numLedOn,"ledIntensity",ledIntensity,"currentMean",currentMean);
 }
 void calibrateLED() {
-    if(numLedOn > 0) spread(numLedOn,ledIntensity,numLedPerStrip/3,0);
+    //if(numLedOn > 0) spread(numLedOn,ledIntensity,numLedPerStrip/3,0);
     currentMean = (float)Core.mean(opencv.getGray()).val[0];
     if(debugMode){
         if(pgPlot == null)resetCalibrateLED();
@@ -349,20 +351,55 @@ void runMotionDetectionAlgorithm(){
         }
 
 }
+
+//TODO unify code to calc mean, std,channels,and lookup for thresholds
+//for diff and edge alg
+//get mean,std of ROI
+//get Idx closest
+
+//void test(){
+//    Core.meanStdDev(opencv.matGray.rowRange(ROIRange[0],ROIRange[1]),mean,std);
+//    float fstd = (float)std.get(0,0)[0];
+//    if(fstd > 10){
+//        println((float)mean.get(0,0)[0],fstd);
+//        return true;
+//    }
+//    int i =  getMeanIdx(opencv.matGray.rowRange(ROIRange[0],ROIRange[1]));
+//
+//    // copies specified channel to gray channel
+//    // useChannel(channelMode);
+//
+//    //
+//}
+
 void runEdgeAlgorithm(float lvl){
+    //Could use mean of whole image instead of ROI since calibration happens
+    // with someone standing in front of screen. But wouldn't hurt trying
+    //with ROI too
     currentMean = (float)Core.mean(opencv.getGray()).val[0];
     if(oneShotPrint){
-        println(lowEdgeThresh,highEdgeThresh,currentMean);
+        println(lowThresh,highThresh,currentMean);
         oneShotPrint = false;
     }
+    if(blur){
+        opencv.getGray().copyTo(matToFilter);
+        Imgproc.bilateralFilter(matToFilter, opencv.getGray(), -1,25,5);
+        //Imgproc.bilateralFilter(matToFilter, opencv.getGray(), -1,borderColor,borderWidth);
+    }
+
+    if(debugMode){
+        inputImg.copy(opencv.getOutput(),0,0,w,h,0,0,w,h);
+        image(inputImg,w,0);
+    }
+
     //TODO bilateralFilter
     if(calibForEdge){
         calibrateForEdge();
-        opencv.findCannyEdges(lowEdgeThresh,highEdgeThresh);
+        opencv.findCannyEdges(lowThresh,highThresh);
     } else if(lowEdgeT.length != 0){
-        int i = getMeanIdx(currentMean);
+        int i = getMeanFloorIdx(currentMean,meanForT);
         //TODO if needed: interpolate between i and i+1 values of thresholds
-        if(printThreshold) println(i,currentMean,bImgsMean[i],lowEdgeT[i],highEdgeT[i]);
+        if(printThreshold) println(i,currentMean,meanForT[i],lowEdgeT[i],highEdgeT[i]);
         opencv.findCannyEdges(lowEdgeT[i],highEdgeT[i]);
     } else {
         //from http://justin-liang.com/tutorials/canny/
@@ -373,7 +410,15 @@ void runEdgeAlgorithm(float lvl){
         //Perform OTSU segmentation on your image.
         //upperthresh=OTSU(inputgrayscaleimage)
         //lowerthresh=0.5*upperthresh
-        opencv.findCannyEdges(lowEdgeThresh,(int)currentMean);
+        //from:https://www.pyimagesearch.com/2015/04/06/zero-parameter-automatic-canny-edge-detection-with-python-and-opencv/
+        //v = np.median(image)
+        //sigma=0.33)
+	//# apply automatic Canny edge detection using the computed median
+	//lower = int(max(0, (1.0 - sigma) * v))
+	//upper = int(min(255, (1.0 + sigma) * v))
+	//edged = cv2.Canny(image, lower, upper)
+        //opencv.findCannyEdges(lowThresh,(int)currentMean);
+        opencv.findCannyEdges(lowThresh,highThresh);
     }
 
     opencv.dilate();
@@ -390,64 +435,79 @@ void runEdgeAlgorithm(float lvl){
 }
 
 void resetCalibForEdge(){
-    bImgsMean = new float[0];
+    meanForT = new float[0];
     lowEdgeT = new int[0];
     highEdgeT = new int[0];
     println("Resetting Calib Arrays");
 }
 
 void insertAndSortCalibForEdge(){
-    float[] tempM = bImgsMean;
+    float[] tempM = meanForT;
     int[] tempL = lowEdgeT;
     int[] tempH = highEdgeT;
-    bImgsMean = new float[tempM.length+1];
+    meanForT = new float[tempM.length+1];
     lowEdgeT = new int[tempL.length+1];
     highEdgeT = new int[tempH.length+1];
     int i, j;
     boolean notInsterted = true;
     for(i = 0, j = 0; i<tempM.length;i++,j++){
         if(notInsterted && currentMean < tempM[i]){
-            bImgsMean[j] = currentMean;
-            lowEdgeT[j] = lowEdgeThresh;
-            highEdgeT[j] = highEdgeThresh;
+            meanForT[j] = currentMean;
+            lowEdgeT[j] = lowThresh;
+            highEdgeT[j] = highThresh;
             j++;
             notInsterted = false;
         }
 
-        bImgsMean[j] = tempM[i];
+        meanForT[j] = tempM[i];
         lowEdgeT[j] = tempL[i];
         highEdgeT[j] = tempH[i];
     }
 
     if(notInsterted) {//not inserted yet
-        bImgsMean[j] = currentMean;
-        lowEdgeT[j] = lowEdgeThresh;
-        highEdgeT[j] = highEdgeThresh;
+        meanForT[j] = currentMean;
+        lowEdgeT[j] = lowThresh;
+        highEdgeT[j] = highThresh;
     }
-    printArray(bImgsMean);
-    println("inserting ",currentMean,lowEdgeThresh,highEdgeThresh);
+    printArray(meanForT);
+    println("inserting ",currentMean,lowThresh,highThresh);
 
 
 }
 
-void loadCalibForEdge(){
-    Table table = loadTable("edgeCalib.csv", "header");
+void loadCalibForEdge(char alg){
+
+    String fname;
+    if(alg == 'e')
+        fname = "edgeCalib.csv";
+    else
+        fname = "diffCalib.csv";
+
+    Table table = loadTable(fname, "header");
     int numRows = table.getRowCount();
-    bImgsMean = new float[numRows];
+    meanForT = new float[numRows];
     lowEdgeT = new int[numRows];
     highEdgeT = new int[numRows];
     int i = 0;
     for (TableRow row : table.rows()) {
-        bImgsMean[i] = row.getFloat("mean");
+        meanForT[i] = row.getFloat("mean");
         lowEdgeT[i] = row.getInt("lowThresh");
-        highEdgeT[i] = row.getInt("highThresh");
+        if(alg == 'e')
+            highEdgeT[i] = row.getInt("highThresh");
         i++;
     }
-    println("Loaded data/edgeCalib.csv");
-    printArray(bImgsMean);
+    println("Loaded data/"+fname);
+    printArray(meanForT);
 }
 
-void saveCalibForEdge(){
+void saveCalibForEdge(char alg){
+    String fname;
+    if(alg == 'e')
+        fname = "edgeCalib.csv";
+    else
+        fname = "diffCalib.csv";
+
+
     Table table = new Table();
     table.addColumn("mean");
     table.addColumn("lowThresh");
@@ -456,12 +516,12 @@ void saveCalibForEdge(){
 
     for( int i = 0; i<lowEdgeT.length;i++){
         newRow = table.addRow();
-        newRow.setFloat("mean", bImgsMean[i]);
+        newRow.setFloat("mean", meanForT[i]);
         newRow.setInt("lowThresh", lowEdgeT[i]);
         newRow.setInt("highThresh", highEdgeT[i]);
     }
-    saveTable(table, "data/edgeCalib.csv");
-    println("saving to data/edgeCalib.csv");
+    saveTable(table, "data/"+ fname);
+    println("saving to data/"+ fname);
 }
 
 
@@ -479,17 +539,23 @@ boolean runDiffAlgorithm(){
         //TODO: absdiff ROI with last selected background ROI
         Core.meanStdDev(opencv.matGray.rowRange(ROIRange[0],ROIRange[1]),mean,std);
         float fstd = (float)std.get(0,0)[0];
-        if(fstd > 10){
+        if(false && fstd > 10){
             println((float)mean.get(0,0)[0],fstd);
             return true;
         }
-        i = getMeanIdx(opencv.matGray.rowRange(ROIRange[0],ROIRange[1]));
+        Mat currentImg = opencv.matGray.rowRange(ROIRange[0],ROIRange[1]);
+        currentMean = (float)Core.mean(currentImg).val[0];
+        i = getMeanRoundIdx(currentMean,bImgsMean);
     } else
         i = getBackgroundEnergyIdx();
 //    if(debugMode){
 //      opencv.toPImage(opencv.matGray.rowRange(ROIRange[0],ROIRange[1]),ROIImg);
 //      image(ROIImg,w,h);
 //    }
+    if(debugMode){
+        inputImg.copy(opencv.getOutput(),0,0,w,h,0,0,w,h);
+        image(inputImg,w,0);
+    }
 
     if(channelMode == 'm'){
         if(blur){
@@ -500,8 +566,10 @@ boolean runDiffAlgorithm(){
         mOpenCV.diff(opencv.getR(),bImgsMatR[i]);
         mOpenCV.diff(opencv.getG(),bImgsMatG[i]);
         mOpenCV.diff(opencv.getB(),bImgsMatB[i]);
-        Core.max(opencv.getR(),opencv.getG(),opencv.getGray());
-        Core.max(opencv.getGray(),opencv.getB(),opencv.getGray());
+        //Core.max(opencv.getR(),opencv.getG(),opencv.getGray());
+        //Core.max(opencv.getGray(),opencv.getB(),opencv.getGray());
+        Core.add(opencv.getR(),opencv.getG(),opencv.getGray());
+        Core.add(opencv.getGray(),opencv.getB(),opencv.getGray());
     } else {
         switch(channelMode){
         case 'r':
@@ -518,10 +586,6 @@ boolean runDiffAlgorithm(){
         if(blur){
             Imgproc.GaussianBlur(opencv.getGray(), opencv.getGray(), ksize, 2, 2);
         }
-        if(debugMode){
-            inputImg.copy(opencv.getOutput(),0,0,w,h,0,0,w,h);
-            image(inputImg,w,0);
-        }
 
         //bimg = bImgs[i];
         //opencv.diff(bimg);
@@ -535,24 +599,37 @@ boolean runDiffAlgorithm(){
         //    } else
         mOpenCV.diff(opencv.getGray(),bImgsMat[i]);
     }
-    if(debugMode)
-//      if(debugBackground){
-//          image(opencv.getSnapshot(bImgsMat[i]),0,h);
-//      } else {
+    if(debugMode){
         diffImg.copy(opencv.getOutput(),0,0,w,h,0,0,w,h);
-            image(diffImg,0,h);
-//      }
+        image(diffImg,0,h);
+      }
     //opencv.gray();
-    if(autoThreshold) {
+    if(calibForEdge){
+        opencv.threshold(lowThresh);
+    }
+    else if(autoThreshold) {
     //TODO cutoff should depend on luminosity
-        thresh = opencv.thresholdret();
+        lowThresh = (int)opencv.thresholdret();
         if(printThreshold){
-            println("Threshold lvl:  ",thresh);
+            println("Threshold lvl:  ",lowThresh);
         }
         //if (thresh < 30) return;
+    } else if(lowEdgeT.length != 0){
+        int j = getMeanFloorIdx(currentMean,meanForT);
+        lowThresh = lowEdgeT[j];
+        opencv.threshold(lowThresh);
     } else {
-        opencv.threshold((int)thresh);
+        //TODO: add getting thresholds from lookup table
+        // based of mean of ROI (similar to edge detection)
+        opencv.threshold(lowThresh);
     }
+
+
+    if(false & oneShotPrint){
+        println(lowThresh,currentMean);
+        oneShotPrint = false;
+    }
+
     if(debugMode){
         if(debugBackground){
             opencv.toPImage(bImgsMat[i],backImg);
@@ -610,7 +687,7 @@ void mapToGrid(PImage imgSrc,PImage imgDest,int lvl){
         imgPicIdx = picIdx-(width-imgSrc.width)*(picIdx/width);
         pixel = imgSrc.pixels[imgPicIdx];
         if(pixel == 0xFFFFFFFF){
-            imgDest.pixels[imgPicIdx] = 0xFFFF0000;//levelColor[0];//0xFFFF0000;
+            imgDest.pixels[imgPicIdx] = 0xFFAA0000;//levelColor[0];//0xFFFF0000;
             for (int j=0; j<lvl ;j++) {
                 int curIdx = (circIdx-j/2);
                 if (curIdx < 0) curIdx += numlevelColors;
@@ -636,6 +713,8 @@ void mapToGrid(PImage imgSrc,PImage imgDest,int lvl){
 void spread(int numLed, int intensity,int startRow, int startCol){
     int picIdx;
     int numPix = opc.pixelLocations.length;
+    setColorMode("RGB");
+    color c = color(intensity,0,0);
     loadPixels();
     int y = startRow;//numLedPerStrip/2;
     int x = startCol;
@@ -644,7 +723,7 @@ void spread(int numLed, int intensity,int startRow, int startCol){
             //println(numPix,y,x,y + numLedPerStrip*x);
 
             picIdx = opc.pixelLocations[ y + numLedPerStrip*x];
-            pixels[picIdx] = color(intensity);
+            pixels[picIdx] = c; //color(intensity);
             if(++x ==  numStrips) {
                 x = 0;
                 y++;
@@ -657,6 +736,7 @@ void border(){
     border('r');
 }
 void border(char col){
+    if(true) return;
     //int now = millis();
     float spacing = h / numLedPerStrip;
     int picIdx = opc.pixelLocations[0];
@@ -684,7 +764,7 @@ void paint(){
     pic.loadPixels();
     paintImg.loadPixels();
     float hue = (millis() * .1) % 360;
-    color c = color(hue, 50,200);
+    color c = color(hue, 50,100);
     int numPixels = opc.pixelLocations.length;
     int picIdx;
     for (int i = 0; i < numPixels; i++) { //loop over grid instead of looping everything
@@ -773,11 +853,11 @@ void contourAudio(float lvl) {
     if(lvl > 1) {
         pg.stroke(250,250,250);
         getsnapshot = true;
-        pg.strokeWeight(4);
+        pg.strokeWeight(2);
     }
     else if(lvl < .2){
         pg.stroke(250,0,0);
-        pg.strokeWeight(2);
+        pg.strokeWeight(4);
     }
     else{
         pg.stroke(lerpColor(from, to,lvl));
@@ -827,7 +907,11 @@ void disp(PImage vid) {
     //if(xflip)
     //      image(vid, 0, 0,width,height,width,0,0,height );
     //  else
-    image(vid,0,0);
+    if(calibForEdge){
+        image(vid,w,h);
+    } else {
+        image(vid,0,0);
+    }
     //float dispScale = .9;
     //image(vid,w*(1-dispScale)/2,h*(1-dispScale)/2,w*dispScale,h*dispScale);
 }
@@ -859,23 +943,24 @@ void initDiffAlgorithm(){
 
     if (initIdx == initCount){
         calibLvl = 0;
+        resetCalibForEdge();
+        lowThresh = 44;
+        highThresh = 0;//not used here
+        //get array of baseline backgrounds
+        //with increasing luminosity
+        bImgsEnergy = new int[nBimgs];
+        bImgsMean = new float[nBimgs];
+        bImgsMatR = new Mat[nBimgs];
+        bImgsMatG = new Mat[nBimgs];
+        bImgsMatB = new Mat[nBimgs];
+        bImgsMatGray = new Mat[nBimgs];
+        bImgsMat = bImgsMatGray;
+
     }
 
     if (initIdx < initCount + nBimgs) {
         int i = initIdx - initCount;
 
-        if (initIdx == initCount) {
-            //get array of baseline backgrounds
-            //with increasing luminosity
-            bImgsEnergy = new int[nBimgs];
-            bImgsMean = new float[nBimgs];
-            bImgsMatR = new Mat[nBimgs];
-            bImgsMatG = new Mat[nBimgs];
-            bImgsMatB = new Mat[nBimgs];
-            bImgsMatGray = new Mat[nBimgs];
-            bImgsMat = bImgsMatGray;
-
-        }
 
         initIdx++;
         /*********************************************
@@ -903,18 +988,20 @@ void initDiffAlgorithm(){
         opencv.loadImage(calibImg);
 
         bImgsEnergy[i] = opc.getLEDEnergy();
-        //bImgsMean[i] = (float)Core.mean(opencv.getGray()).val[0];
-        bImgsMean[i] = (float)Core.mean(opencv.matGray.rowRange(ROIRange[0],ROIRange[1])).val[0];
-        println(bImgsEnergy[i],bImgsMean[i]);
 
         // last contour is not recorded
         // float l = map((float)i/(nBimgs-2),0,1,0,1.4);
-        contourAudio(.2+calibLvl);
-        calibLvl += .1;
+        //contourAudio(.2+calibLvl);
+        //calibLvl += .1;
+        spread((int)calibLvl,100,numLedPerStrip/3,0);
+        calibLvl += 24;
         delay(500);
         //Current camera snapshot corresponds to previous
         //contour update. Since LED screen is updated after draw function
         opencv.loadImage(bimg);
+        //bImgsMean[i] = (float)Core.mean(opencv.getGray()).val[0];
+        bImgsMean[i] = (float)Core.mean(opencv.matGray.rowRange(ROIRange[0],ROIRange[1])).val[0];
+        println(bImgsMean[i]);
         //new Mat(m.height(), m.width(), m.type());
         bImgsMatR[i] = mOpenCV.imitate(opencv.getR());
         bImgsMatG[i] = mOpenCV.imitate(opencv.getG());
@@ -946,36 +1033,35 @@ void initDiffAlgorithm(){
     isInit = false;
 }
 
-int getMeanIdx(float meanVal){
-    //Used for selecting thesholds of Edgedetector
+int getMeanFloorIdx(float meanVal,float [] meanArr){
+    //Used for selecting thresholds of Edgedetector
     //pick the element that's below the meanVal (don't pick closest)
     //that's assuming that calibration started from low mean to high mean
     int i = 1;
-    while(i < bImgsMean.length && meanVal > bImgsMean[i]){
+    while(i < meanArr.length && meanVal > meanArr[i]){
         i++;
     }
     return i - 1;
 }
-int getMeanIdx(Mat currentImg){
-    float currentMean = (float)Core.mean(currentImg).val[0];
+int getMeanRoundIdx(float meanVal,float [] meanArr){
     int i = 1;
 
-    while(currentMean > bImgsMean[i]){
+    while(meanVal > meanArr[i]){
         i++;
-        if(i == bImgsMean.length) {
-            if(printEnergy){int idx = i-1; println(currentMean +" "+(bImgsMean[idx]-currentMean)+ " " + idx +" " + bImgsMean[idx]);}
-            // println(currentMean,i-1);
+        if(i == meanArr.length) {    
+            if(oneShotPrint){int idx = i-1; println(meanVal +" "+(meanArr[idx]-meanVal)+ " " + idx +" " + meanArr[idx]);oneShotPrint = false;}
+            // println(meanVal,i-1);
             return i-1;
         }
     }
-    if((bImgsMean[i]-currentMean) > (currentMean - bImgsMean[i-1])){
-        //println(currentMean,i-1);
-        if(printEnergy){int idx = i-1; println(currentMean +" "+ (bImgsMean[idx]-currentMean)+ " " + idx +" " + bImgsMean[idx] + " " +bImgsMean[i]);}
+    if((meanArr[i]-meanVal) > (meanVal - meanArr[i-1])){
+        //println(meanVal,i-1);
+        if(oneShotPrint){int idx = i-1; println(meanVal +" "+ (meanArr[idx]-meanVal)+ " " + idx +" " + meanArr[idx] + " " +meanArr[i]);oneShotPrint = false;}
 
         return i-1;
     } else {
-        //println(currentMean,i);
-        if(printEnergy){int idx = i; println(currentMean +" "+ (bImgsMean[idx]-currentMean)+ " " + idx +" " + bImgsMean[idx-1] + " " +bImgsMean[idx]);}
+        //println(meanVal,i);
+        if(oneShotPrint){int idx = i; println(meanVal +" "+ (meanArr[idx]-meanVal)+ " " + idx +" " + meanArr[idx-1] + " " +meanArr[idx]);oneShotPrint = false;}
         return i;
     }
 }

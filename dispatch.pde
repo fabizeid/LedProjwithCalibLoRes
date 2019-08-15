@@ -46,14 +46,14 @@ void dispatch() {
 
     }
 
-    if(calibForEdge && detectionAlg == 'e'){
+    if(calibForEdge && (detectionAlg == 'e' || detectionAlg == 'd')){
         switch(key) {
         case 'l': //load to array
-            loadCalibForEdge();
+            loadCalibForEdge(detectionAlg);
             lastKey = 0;
             return;
         case 's': //save to file
-            saveCalibForEdge();
+            saveCalibForEdge(detectionAlg);
             lastKey = 0;
             return;
         case 'i': //insert to array
@@ -65,24 +65,48 @@ void dispatch() {
             lastKey = 0;
             return;
         case ';':
-            highEdgeThresh -= 5;
+            highThresh -= 5;
             lastKey = 0;
-            println("highEdgeThresh :", highEdgeThresh);
+            println("highThresh :", highThresh);
             return;
         case '.':
-            lowEdgeThresh -= 5;
+            lowThresh -= 5;
             lastKey = 0;
-            println("lowEdgeThresh :", lowEdgeThresh);
+            println("lowThresh :", lowThresh);
             return;
         case '\'':
-            highEdgeThresh += 5;
+            highThresh += 5;
             lastKey = 0;
-            println("highEdgeThresh :", highEdgeThresh);
+            println("highThresh :", highThresh);
             return;
         case '/':
-            lowEdgeThresh += 5;
+            lowThresh += 5;
             lastKey = 0;
-            println("lowEdgeThresh :", lowEdgeThresh);
+            println("lowThresh :", lowThresh);
+            return;
+        case 'j':
+            if(numLedOn >= numStrips) numLedOn -= numStrips;
+            println("numLedOn:", numLedOn);
+            lastKey = 0;
+            return;
+        case 'n':
+            if(ledIntensity >= 10) ledIntensity -= 10;
+            println("Led intensity:", ledIntensity);
+            lastKey = 0;
+            return;
+        case 'k':
+            if(numLedOn < (numStrips-1)*numLedPerStrip*2/3) numLedOn += numStrips;
+            println("numLedOn:", numLedOn);
+            lastKey = 0;
+            return;
+        case 'm':
+            if(ledIntensity < 245) ledIntensity += 10;
+            println("Led intensity:", ledIntensity);
+            lastKey = 0;
+            return;
+        case 'o':
+            oneShotPrint = true;
+            lastKey = 0;
             return;
         }
 
@@ -92,9 +116,11 @@ void dispatch() {
         switch(key) {
         case 't':
             printThreshold = !printThreshold;
+            println("printThreshold",printThreshold?"On":"Off");
             break;
         case 's':
             printSLvl = !printSLvl;
+            println("printSLvl",printSLvl?"On":"Off");
             break;
         case 'e':
             printEnergy = !printEnergy;
@@ -112,6 +138,10 @@ void dispatch() {
 
     if(lastKey == 'v'){
         switch(key) {
+        case 'k':
+            debugBackground = !debugBackground;
+            println("debug background");
+            break;
         case 'm':
             camMode = !camMode;
             break;
@@ -152,8 +182,8 @@ void dispatch() {
             if(calibForEdge) {
                 calibForEdge = false;
                 println("Calibration Off");
-            } else if(detectionAlg != 'e')
-                println("Need to be in edge mode for calibration");
+            } else if(detectionAlg != 'e' && detectionAlg != 'd')
+                println("Need to be in edge or diff mode for calibration");
             else {
                 calibForEdge = true;
                 debugMode = true;
@@ -164,6 +194,7 @@ void dispatch() {
                 println("Calibration On");
                 println("Calibration : (i)nsert, (r)eset, (l)oad, (s)ave");
                 println("(;,') high thresh adjusment, (.,/) high thresh adjusment");
+                println("(j,k) num of LED, (n,m) LED intensity");
             }
             break;
         }
@@ -214,17 +245,9 @@ void dispatch() {
 
     if(lastKey == 'a'){ //adjust
         switch(key) {
-        case 'n':
-            debugBackground = !debugBackground;
-            println("debug background");
-            break;
         case 'c':
             tuneMode = 'c';
             println("Adjust Contour");
-            break;
-        case 't':
-            tuneMode = 't';
-            println("Adjust Threshold");
             break;
         case 's':
             tuneMode = 's'; //adjust sound
@@ -240,11 +263,11 @@ void dispatch() {
             break;
         case 'h':
             tuneMode = 'h'; //adjust sound
-            println("Adjust highEdgeThresh");
+            println("Adjust highThresh");
             break;
-        case 'o':
-            tuneMode = 'o'; //adjust sound
-            println("Adjust lowEdgeThresh");
+        case 't':
+            tuneMode = 't'; //adjust sound
+            println("Adjust lowThresh/thresh");
             break;
         case 'r':
         case 'g':
@@ -296,9 +319,8 @@ void dispatch() {
         }
         break;
     case 'a':
-        println("Adjust levels: (s)ound, (c)ontour, (t)hreshold, (w)borderWidth, (l)borderLight, (h)ighedgethres l(o)wedgethresh");
+        println("Adjust levels: (s)ound, (c)ontour, (t)hreshold, (h)ighedgethres, (w)borderWidth, (l)borderLight ");
         println("Use channel: (r)ed,(g)reen,(b)lue,(y)gray,(m)ax ");
-        println("(n)debug background");
 
 
         break;
@@ -307,6 +329,8 @@ void dispatch() {
         break;
     case 'v':
         println("Video: (m)onitor, (p)aint, (c)ontour, (t)est, , motio(n) detection mode, (e)dge detection, cali(b)rate Edge, ca(l)ibrate LED, (d)iff, (o)ff ");
+        println("debug bac(k)ground");
+
         break;
     case 'u':
         printThreshold = false;
@@ -323,7 +347,7 @@ void dispatch() {
     case 'b':
         blur = !blur;
         println("Blur ",blur?"On":"Off");
-        isInit = true;
+        if(detectionAlg == 'd') isInit = true;
         break;
     case 't':
             autoThreshold = !autoThreshold;
@@ -332,16 +356,12 @@ void dispatch() {
     case '[':
         switch(tuneMode){
         case 'h':
-            highEdgeThresh -= 5;
-            println("highEdgeThresh :", highEdgeThresh);
-            break;
-        case 'o':
-            lowEdgeThresh -= 5;
-            println("lowEdgeThresh :", lowEdgeThresh);
+            highThresh -= 5;
+            println("highThresh :", highThresh);
             break;
         case 't':
-            thresh -= 1;
-            println("Threshold :", thresh);
+            lowThresh -= 5;
+            println("lowThresh :", lowThresh);
             break;
         case 'c':
             minContourSize -= 500;
@@ -356,7 +376,7 @@ void dispatch() {
             println("border width:", borderWidth);
             break;
         case 'l':
-            if(borderColor > 0) borderColor -= 10;
+            if(borderColor > 0) borderColor -= 1;
             println("border color:", borderColor);
             break;
         }
@@ -365,16 +385,12 @@ void dispatch() {
     case ']':
         switch(tuneMode){
         case 'h':
-            highEdgeThresh += 5;
-            println("highEdgeThresh :", highEdgeThresh);
-            break;
-        case 'o':
-            lowEdgeThresh += 5;
-            println("lowEdgeThresh :", lowEdgeThresh);
+            highThresh += 5;
+            println("highThresh :", highThresh);
             break;
         case 't':
-            thresh += 1;
-            println("Threshold :", thresh);
+            lowThresh += 5;
+            println("lowThresh :", lowThresh);
             break;
         case 'c':
             minContourSize += 500;
@@ -389,7 +405,8 @@ void dispatch() {
             println("border :", borderWidth);
             break;
         case 'l':
-            if(borderColor < 255) borderColor += 10;
+            //if(borderColor < 255) borderColor += 10;
+            borderColor += 1;
             println("border color:", borderColor);
             break;
         }
