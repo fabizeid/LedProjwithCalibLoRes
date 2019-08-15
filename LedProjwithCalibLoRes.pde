@@ -15,6 +15,7 @@ import org.opencv.imgproc.Imgproc;
 import org.opencv.core.Size;
 import org.opencv.core.MatOfDouble;
 import org.opencv.core.Mat;
+import org.opencv.core.CvType;
 import org.opencv.core.Core;
 import org.opencv.video.BackgroundSubtractorMOG;
 import ddf.minim.*;
@@ -29,7 +30,7 @@ PGraphics pg,pgPlot;
 ArrayList<PVector> points;
 final int nBimgs = 2;//13*2;
 Mat[] bImgsMat,bImgsMatR,bImgsMatG,bImgsMatB,bImgsMatGray;
-Mat matToFilter;
+Mat matToFilterIn,matToFilterOut,matToFilterGray;
 PImage ROIImg;
 MatOfDouble mean;
 MatOfDouble std;
@@ -76,6 +77,7 @@ String songPath = "C:/Users/farid/Desktop/Karen Music/Amy McDonald - This Is The
 //final String songPath = "C:/Users/farid/Desktop/Karen Music/Tarkan - Dudu.mp3";
 String soundMode = "noSound";//groove,mic,noSound
 //final String soundMode = "groove";//groove,mic,noSound
+boolean useColor = false;
 boolean initOPCGrid = true;
 boolean camMode = false;
 boolean debugMode = false;
@@ -148,12 +150,12 @@ void setup() {
     frameRate(fRate);
     isInit = true;
     initIdx = 0;
-    bimg = createImage(w,h,RGB);
+    bimg = createImage(w,h,ARGB);
     paintImg = createImage(w,h,RGB);//createBlackImage(w,h);
     edgeImg = createImage(w,h,ARGB);
     diffImg  = createImage(w,h,ALPHA);
     backImg  = createImage(w,h,ALPHA);
-    inputImg  = createImage(w,h,ALPHA);
+    inputImg  = createImage(w,h,ARGB);
     ROIImg = createImage(w,ROIRange[1]-ROIRange[0],ARGB);
     mean = new MatOfDouble();
     std = new MatOfDouble();
@@ -203,6 +205,17 @@ void setOPCGrid(){
                 true);
 
 }
+
+Mat getCurrentMat()
+{
+
+    if(opencv.getUseColor()){
+        return opencv.matBGRA;
+    } else{
+        return opencv.matGray;
+    }
+
+}
 void draw() {
 
    if(initOPCGrid) {
@@ -223,7 +236,10 @@ void draw() {
            resetCalibForEdge();
            lowThresh = 75;
            highThresh = 145;
-           matToFilter = mOpenCV.imitate(opencv.getGray());
+           //matToFilter = mOpenCV.imitate(getCurrentMat());
+           matToFilterIn =  new Mat(getCurrentMat().height(), getCurrentMat().width(),CvType.CV_8UC3);
+           matToFilterOut = mOpenCV.imitate(matToFilterIn);
+           matToFilterGray = mOpenCV.imitate(opencv.getGray());
            isInit = false;
        } else if (detectionAlg == 'b'){
            if(pgPlot == null)resetCalibrateLED();
@@ -376,15 +392,28 @@ void runEdgeAlgorithm(float lvl){
     //Could use mean of whole image instead of ROI since calibration happens
     // with someone standing in front of screen. But wouldn't hurt trying
     //with ROI too
+    if(useColor)
+        opencv.useColor();
+    else
+        opencv.useGray();
+
     currentMean = (float)Core.mean(opencv.getGray()).val[0];
     if(oneShotPrint){
         println(lowThresh,highThresh,currentMean);
         oneShotPrint = false;
     }
     if(blur){
-        opencv.getGray().copyTo(matToFilter);
-        Imgproc.bilateralFilter(matToFilter, opencv.getGray(), -1,25,5);
-        //Imgproc.bilateralFilter(matToFilter, opencv.getGray(), -1,borderColor,borderWidth);
+        if(useColor){
+            Imgproc.cvtColor(getCurrentMat(),matToFilterIn,Imgproc.COLOR_BGRA2BGR);
+            //Imgproc.bilateralFilter(matToFilterIn, matToFilterOut, -1,borderColor,borderWidth);
+            Imgproc.bilateralFilter(matToFilterIn, matToFilterOut, -1,25*3,5);
+            Imgproc.cvtColor(matToFilterOut,getCurrentMat(),Imgproc.COLOR_BGR2BGRA);
+        } else {
+            opencv.getGray().copyTo(matToFilterGray);
+            Imgproc.bilateralFilter(matToFilterGray, getCurrentMat(), -1,25,5);
+        }
+
+        //Imgproc.bilateralFilter(matToFilterGray, opencv.getGray(), -1,borderColor,borderWidth);
     }
 
     if(debugMode){
@@ -420,7 +449,7 @@ void runEdgeAlgorithm(float lvl){
         //opencv.findCannyEdges(lowThresh,(int)currentMean);
         opencv.findCannyEdges(lowThresh,highThresh);
     }
-
+    opencv.useGray();
     opencv.dilate();
     if(debugMode){
         diffImg.copy(opencv.getOutput(),0,0,w,h,0,0,w,h);
@@ -642,19 +671,6 @@ boolean runDiffAlgorithm(){
     opencv.erode();
     if(enablePaint) paint();
     return false;
-}
-
-
-
-PImage createBlackImage(int myWidth, int myHeight){
-    PImage bimg;
-    bimg = createImage(myWidth,myHeight,RGB);
-    bimg.loadPixels();
-    for (int i = 0; i < bimg.pixels.length; i++) {
-        bimg.pixels[i] = color(0);
-    }
-    bimg.updatePixels();
-    return  bimg;
 }
 
 
@@ -924,13 +940,10 @@ void initDiffAlgorithm(){
 
     video.read();
     if(isPI) {
-        bimg = video;
+        bimg.copy(video,0,0,w,h,0,0,w,h);
     } else {
-        bimg = video.get();
-        bimg.resize(w,h);
         int croppedW = w*vh/h;
-        bimg.copy(video.get(),(vw-croppedW)/2,0,croppedW,vh,0,0,w,h);
-
+        bimg.copy(video,(vw-croppedW)/2,0,croppedW,vh,0,0,w,h);
     }
 
     final int initCount = 10;
@@ -1048,7 +1061,7 @@ int getMeanRoundIdx(float meanVal,float [] meanArr){
 
     while(meanVal > meanArr[i]){
         i++;
-        if(i == meanArr.length) {    
+        if(i == meanArr.length) {
             if(oneShotPrint){int idx = i-1; println(meanVal +" "+(meanArr[idx]-meanVal)+ " " + idx +" " + meanArr[idx]);oneShotPrint = false;}
             // println(meanVal,i-1);
             return i-1;
@@ -1090,13 +1103,17 @@ int getBackgroundEnergyIdx(){
     }
 }
 
-public class mOpenCV extends OpenCV{
+public  class mOpenCV extends OpenCV{
     public mOpenCV(PApplet theParent, int width, int height) {
       super( theParent, width, height);
     }
     public float thresholdret() {
     return (float)(Imgproc.threshold(matGray, matGray, 0, 255, Imgproc.THRESH_BINARY | Imgproc.THRESH_OTSU));
     }
+    public void findCannyEdges(int lowThreshold, int highThreshold){
+        Imgproc.Canny(getCurrentMat(), getGray(), lowThreshold, highThreshold);
+    }
+
 }
 void getChannel(PImage in, PImage out, int mask){
 

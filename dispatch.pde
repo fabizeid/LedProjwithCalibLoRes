@@ -301,6 +301,10 @@ void dispatch() {
 //      contScale += 1;
 //      println("contScale "+contScale);
 //      break;
+    case 'c':
+        useColor = !useColor;
+        println("useColor",useColor?"On":"Off");
+        break;
     case 'i':
         println("Init");
         delay(4000);
