@@ -89,7 +89,7 @@ boolean enablePaint = false;
 boolean enableContour = true;
 boolean stopLoop = false;
 boolean saveContour = false;
-char detectionAlg = 'e'; //(e)dge (m)otion (d)iff (o)ff
+char detectionAlg = 'e'; //(e)dge (m)otion (d)iff (o)ff (v)uemeter
 boolean calibForEdge = false;
 boolean blur = false;
 boolean printThreshold = false;
@@ -114,6 +114,27 @@ char tuneMode = 0;
 char channelMode = 0;
 Size ksize = new Size(3,3);
 
+
+/*****************************************************************/
+//Strip settings for vumeter
+int numLedPerStrip_HALF = (numLedPerStrip/2);
+int PEAK_FALL = 2; //Rate of falling peak dot
+int SAMPLES = 60;  // Length of buffer for dynamic level adjustment
+int TOP = (numLedPerStrip + 2); // Allow dot to go slightly off scale
+float SPEED = .20;       // Amount to increment RGB color by each cycle
+int
+    vol[] = new int[SAMPLES],       // Collection of prior volume samples
+    minLvlAvg = 0,      // For dynamic adjustment of graph low & high
+    maxLvlAvg = 512;
+float
+  greenOffset = 30,
+  blueOffset = 150;
+int volCount  = 0;      // Frame counter for storing past volume data
+float maxVal;
+int peak = 16;      // Peak level of column; used for falling dots
+int dotCount = 0;  //Frame counter for peak dot
+
+/*****************************************************************/
 
 void settings(){
     if(isPI)
@@ -183,6 +204,7 @@ void setup() {
     } else if(soundMode.equals("net")){
             audioserver = new AudioServer(aport);
     }
+    maxVal = 0;
     borderWidth = 0;
     //borderColor = 250;
     borderColor = 0;
@@ -221,6 +243,7 @@ Mat getCurrentMat()
 }
 void draw() {
 
+
    if(initOPCGrid) {
        setOPCGrid();
        initOPCGrid = false;
@@ -254,6 +277,27 @@ void draw() {
        //if(borderWidth > 0) border();
        return;
     }
+
+
+   float lvl;
+
+    if(soundMode.equals("noSound")){
+        lvl = 0;
+    } else if(soundMode.equals("test")){
+        lvl = random(0,1);
+    } else if(soundMode.equals("net")){
+        lvl = (float)audioserver.get();
+        lvl =  map( lvl,0.02,.3*255,0,1);
+    } else {
+        lvl = audioSource.mix.level();
+        lvl =  map( lvl,lowLvl,highLvl,0,1);
+    }
+    if(detectionAlg == 'v') {
+        background(0);
+        vuOPC(lvl);
+        return;
+    }
+
    if (video.available() ) {
        background(0);
         video.read();
@@ -271,18 +315,6 @@ void draw() {
     if (camMode){
         disp(bimg);
         return;
-    }
-    float lvl;
-    if(soundMode.equals("noSound")){
-        lvl = 0;
-    } else if(soundMode.equals("test")){
-        lvl = random(0,1);
-    } else if(soundMode.equals("net")){
-        lvl = (float)audioserver.get();
-        lvl =  map( lvl,0.02,.3*255,0,1);
-    } else {
-        lvl = audioSource.mix.level();
-        lvl =  map( lvl,lowLvl,highLvl,0,1);
     }
 
     opencv.loadImage(bimg);
@@ -464,7 +496,7 @@ void runEdgeAlgorithm(float lvl){
     if(enablePaint) paint();
     lvl =  map(lvl,0,1,0,numlevelColors);
     lvl = constrain(lvl,0,numlevelColors);
-    mapToGrid(opencv.getOutput(),edgeImg,(int)round(lvl));
+    //mapToGrid(opencv.getOutput(),edgeImg,(int)round(lvl));
     //mapToGrid(opencv.getOutput(),edgeImg,0);
 
 }
@@ -1156,4 +1188,163 @@ void sortBackgrounds(){
             }
         }
     }
+}
+
+
+void vuOPC(float lvl) {
+    int i,n,idx;
+    int height;
+    int x = numStrips/2;
+    n = int(lvl*512);
+    height = int(map(n, minLvlAvg,maxLvlAvg,0,TOP));
+    if(height > peak)     peak = height; // Keep 'peak' dot at top
+    loadPixels();
+    // Color pixels based on rainbow gradient
+    for(i=0; i<numLedPerStrip; i++) {
+        idx = opc.pixelLocations[ i + numLedPerStrip*x];
+        if(i >= height)
+            pixels[idx] = 0;
+        else
+            pixels[idx] = Wheel(map(i,0,numLedPerStrip-1,30,150));
+    }
+
+    // Draw peak dot
+    if(peak > 0 && peak <= numLedPerStrip-1){
+        idx = opc.pixelLocations[ peak + numLedPerStrip*x];
+        pixels[idx] = Wheel(map(peak,0,numLedPerStrip-1,30,150));
+    }
+
+    updatePixels();
+    // Every few frames, make the peak pixel drop by 1:
+    if(++dotCount >= PEAK_FALL) { //fall rate
+        if(peak > 0) peak--;
+        dotCount = 0;
+    }
+    dynRange(n);
+}
+
+void vu1OPC(float lvl) {
+    int i,n,colr,idx;
+    int height;
+    n = int(lvl*512);
+    int x = numStrips/2;
+    height = int(map(n, minLvlAvg,maxLvlAvg,0,TOP));
+    if(height > peak)     peak = height; // Keep 'peak' dot at top
+    loadPixels();
+    // Color pixels based on rainbow gradient
+    for(i=0; i<numLedPerStrip_HALF; i++) {
+        if(i >= height) {
+            idx = opc.pixelLocations[numLedPerStrip_HALF-i-1 + numLedPerStrip*x];
+            pixels[idx] = 0;
+            idx = opc.pixelLocations[numLedPerStrip_HALF+i + numLedPerStrip*x];
+            pixels[idx] = 0;
+        }
+        else {
+            colr = Wheel(map(i,0,numLedPerStrip_HALF-1,30,150));
+            idx = opc.pixelLocations[numLedPerStrip_HALF-i-1 + numLedPerStrip*x];
+            pixels[idx] = colr;
+            idx = opc.pixelLocations[numLedPerStrip_HALF+i + numLedPerStrip*x];
+            pixels[idx] = colr;
+        }
+
+    }
+
+    // Draw peak dot
+    if(peak > 0 && peak <= numLedPerStrip_HALF-1) {
+        colr = Wheel(map(peak,0,numLedPerStrip_HALF-1,30,150));
+        idx = opc.pixelLocations[numLedPerStrip_HALF-peak-1 + numLedPerStrip*x];
+        pixels[idx] = colr;
+        idx = opc.pixelLocations[numLedPerStrip_HALF+peak + numLedPerStrip*x];
+        pixels[idx] = colr;
+    }
+
+    updatePixels();
+    // Every few frames, make the peak pixel drop by 1:
+    if(++dotCount >= PEAK_FALL) { //fall rate
+
+        if(peak > 0) peak--;
+        dotCount = 0;
+    }
+
+
+
+
+    dynRange(n);
+}
+
+void vu3OPC(float lvl) {
+    int i,n,colr,idx;
+    int height;
+    int x = numStrips/2;
+    n = int(lvl*512);
+    height = int(map(n, minLvlAvg,maxLvlAvg,0,TOP));
+    if (height > peak)     peak   = height; // Keep 'peak' dot at top
+    greenOffset += SPEED;
+    blueOffset += SPEED;
+    if (greenOffset >= 255) greenOffset = 0;
+    if (blueOffset >= 255) blueOffset = 0;
+    // Color pixels based on rainbow gradient
+    for(i=0; i<numLedPerStrip; i++) {
+        idx = opc.pixelLocations[ i + numLedPerStrip*x];
+        if(i >= height)
+            pixels[idx] = 0;
+        else
+            pixels[idx] = Wheel(map(i,0,numLedPerStrip-1,(int)greenOffset, (int)blueOffset));
+    }
+
+    // Draw peak dot
+    if(peak > 0 && peak <= numLedPerStrip-1){
+        idx = opc.pixelLocations[ peak + numLedPerStrip*x];
+        pixels[idx] = Wheel(map(peak,0,numLedPerStrip-1,30,150));
+    }
+    updatePixels();
+
+    // Every few frames, make the peak pixel drop by 1:
+
+    if(++dotCount >= PEAK_FALL) { //fall rate
+
+        if(peak > 0) peak--;
+        dotCount = 0;
+    }
+
+
+    dynRange(n);
+}
+
+void dynRange(int n){
+    if(true)return;
+    int i,minLvl, maxLvl;
+    vol[volCount] = n;                      // Save sample for dynamic leveling
+    if(++volCount >= SAMPLES) volCount = 0; // Advance/rollover sample counter
+
+    // Get volume range of prior frames
+    minLvl = maxLvl = vol[0];
+    for(i=1; i<SAMPLES; i++) {
+        if(vol[i] < minLvl)      minLvl = vol[i];
+        else if(vol[i] > maxLvl) maxLvl = vol[i];
+    }
+    // minLvl and maxLvl indicate the volume range over prior frames, used
+    // for vertically scaling the output graph (so it looks interesting
+    // regardless of volume level).  If they're too close together though
+    // (e.g. at very low volume levels) the graph becomes super coarse
+    // and 'jumpy'...so keep some minimum distance between them (this
+    // also lets the graph go to zero when no sound is playing):
+    if((maxLvl - minLvl) < TOP*12) maxLvl = minLvl + TOP*12;
+    minLvlAvg = (minLvlAvg * 63 + minLvl) >>> 6; // Dampen min/max levels
+    maxLvlAvg = (maxLvlAvg * 63 + maxLvl) >>> 6; // (fake rolling average)
+}
+
+// Input a value 0 to 255 to get a color value.
+// The colors are a transition r - g - b - back to r.
+int Wheel(float fWheelPos) {
+    int WheelPos = (int)fWheelPos;
+  if(WheelPos < 85) {
+   return color(WheelPos * 3, 255 - WheelPos * 3, 0);
+  } else if(WheelPos < 170) {
+   WheelPos -= 85;
+   return color(255 - WheelPos * 3, 0, WheelPos * 3);
+  } else {
+   WheelPos -= 170;
+   return color(0, WheelPos * 3, 255 - WheelPos * 3);
+  }
 }

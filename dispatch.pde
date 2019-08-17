@@ -173,6 +173,10 @@ void dispatch() {
         case 'o': //off
             detectionAlg = 'o';
             break;
+        case 'v': //vumeter
+            detectionAlg = 'v';
+            isInit = true;
+            break;
         case 'l': //(c)alibrate
             detectionAlg = 'c';
             isInit = true;
@@ -204,6 +208,8 @@ void dispatch() {
     }
 
     if(lastKey == 's'){
+        if(audioserver != null)
+            audioserver.stopThread();
         switch(key) {
         case 'o':
             minim.stop();
@@ -228,7 +234,7 @@ void dispatch() {
         case 'm':
             minim.stop();
             soundMode = "mic";
-            mic = minim.getLineIn();
+            mic = minim.getLineIn(Minim.MONO);
             audioSource = mic;
             lowLvl = mLowLvl;
             highLvl = mHighLvl;
@@ -240,8 +246,6 @@ void dispatch() {
             soundMode = "net";
             lowLvl = mLowLvl;
             highLvl = mHighLvl;
-            if(audioserver != null)
-                audioserver.stopThread();
             audioserver = new AudioServer(aport);
             println("Net On");
             delay(2000);
@@ -344,7 +348,7 @@ void dispatch() {
         break;
     case 'v':
         println("Video: (m)onitor, (p)aint, (c)ontour, (t)est, , motio(n) detection mode, (e)dge detection, cali(b)rate Edge, ca(l)ibrate LED, (d)iff, (o)ff ");
-        println("debug bac(k)ground");
+        println("debug bac(k)ground, (v)uemeter");
 
         break;
     case 'u':

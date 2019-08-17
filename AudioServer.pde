@@ -33,8 +33,10 @@ public class AudioServer implements Runnable
         return (int)buf[0] & 0xFF;
     }
     public void stopThread(){
-        listen = false;
-        socket.close();
+        if(listen){
+            listen = false; 
+            socket.close();
+        }
     }
     public void run() {
         while(listen){
