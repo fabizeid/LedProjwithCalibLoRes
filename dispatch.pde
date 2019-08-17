@@ -205,7 +205,7 @@ void dispatch() {
 
     if(lastKey == 's'){
         switch(key) {
-        case 'n':
+        case 'o':
             minim.stop();
             soundMode = "noSound";
             println("Sound Off");
@@ -233,6 +233,17 @@ void dispatch() {
             lowLvl = mLowLvl;
             highLvl = mHighLvl;
             println("Mic On");
+            delay(2000);
+            break;
+        case 'n':
+            minim.stop();
+            soundMode = "net";
+            lowLvl = mLowLvl;
+            highLvl = mHighLvl;
+            if(audioserver != null)
+                audioserver.stopThread();
+            audioserver = new AudioServer(aport);
+            println("Net On");
             delay(2000);
             break;
         }
@@ -343,7 +354,7 @@ void dispatch() {
         println("Stop printing");
         break;
     case 's':
-        println("Sound: (n)one, (g)roove, (m)ic, (t)est ");
+        println("Sound: (o)ff, (g)roove, (m)ic, (n)et, (t)est ");
         break;
     case 'x':
         //saveContour = true;

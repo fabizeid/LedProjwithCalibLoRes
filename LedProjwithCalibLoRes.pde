@@ -26,6 +26,7 @@ AudioPlayer groove;
 AudioInput mic;
 AudioSource audioSource;
 OPC opc;
+AudioServer audioserver;
 PGraphics pg,pgPlot;
 ArrayList<PVector> points;
 final int nBimgs = 2;//13*2;
@@ -65,6 +66,7 @@ final int vh = 240;
 final int fRate = 20;
 String ip;
 final int port = 7890;
+final int aport = 7891;
 final int numStrips = 24;
 final int numLedPerStrip = 60;
 boolean autoThreshold = true;
@@ -172,13 +174,14 @@ void setup() {
         audioSource = mic;
         lowLvl = mLowLvl;
         highLvl = mHighLvl;
-    }
-    if(soundMode.equals("groove")){
+    } else if(soundMode.equals("groove")){
         groove = minim.loadFile(songPath);
         groove.loop();
         audioSource = groove;
         lowLvl = gLowLvl;
         highLvl = gHighLvl;
+    } else if(soundMode.equals("net")){
+            audioserver = new AudioServer(aport);
     }
     borderWidth = 0;
     //borderColor = 250;
@@ -229,6 +232,7 @@ void draw() {
        if(detectionAlg == 'm') {
            //opencv.startBackgroundSubtraction(15, 3, 0.5);
            backgroundSubtractor = new BackgroundSubtractorMOG(15, 3, .5);
+           println("Init motion");
            isInit = false;
        } else if (detectionAlg == 'd'){
            initDiffAlgorithm();
@@ -273,7 +277,9 @@ void draw() {
         lvl = 0;
     } else if(soundMode.equals("test")){
         lvl = random(0,1);
-
+    } else if(soundMode.equals("net")){
+        lvl = (float)audioserver.get();
+        lvl =  map( lvl,0.02,.3*255,0,1);
     } else {
         lvl = audioSource.mix.level();
         lvl =  map( lvl,lowLvl,highLvl,0,1);
@@ -361,7 +367,7 @@ void calibrateLED() {
 
 void runMotionDetectionAlgorithm(){
     //opencv.updateBackground();
-        backgroundSubtractor.apply(opencv.getGray(), opencv.getGray(), 0.0001);
+        backgroundSubtractor.apply(opencv.getGray(), opencv.getGray(), 0.001);
         if(debugMode){
             image(opencv.getOutput().get(),w,0);
         }
@@ -723,6 +729,7 @@ void mapToGrid(PImage imgSrc,PImage imgDest,int lvl){
 
     }
     imgDest.updatePixels();
+    //TODO add switch to turn this on or off
     disp(imgDest);
 }
 
@@ -893,7 +900,7 @@ void contourAudio(float lvl) {
 //      image(opencv.getSnapshot(),w,h);
 //    }
 
-    for (Contour contour : opencv.findContours()) {
+    for (Contour contour : opencv.findContours(false,false)) {
         if (contour.area() > minContourSize) {
             points = contour.getPoints();
             pg.beginShape();
