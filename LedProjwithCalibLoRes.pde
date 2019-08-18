@@ -37,14 +37,15 @@ MatOfDouble mean;
 MatOfDouble std;
 final int[] ROIRange = {0,2};
 int [] bImgsEnergy;
-float [] bImgsMean,meanForT;
+float [] bImgsMean,meanForT,meanForCalib;
 float currentMean;
 int[] lowEdgeT,highEdgeT,levelColor,idxHist;
 final int numlevelColors = 6;
 float calibLvl;
 PImage bimg,paintImg,edgeImg,contImg,diffImg,backImg,inputImg;
+PImage [] calibImg;
 boolean getsnapshot,isInit;
-int initIdx;
+int initIdx,capturedImgIdx;
 int lastGestureCheck; //ms
 int lastGestureSwitch; //ms
 int gestureState;
@@ -89,8 +90,8 @@ boolean enablePaint = false;
 boolean enableContour = true;
 boolean stopLoop = false;
 boolean saveContour = false;
-char detectionAlg = 'e'; //(e)dge (m)otion (d)iff (o)ff (v)uemeter
-boolean calibForEdge = false;
+char prevDetectionAlg, detectionAlg = 'e'; //(c)alibrate (e)dge (m)otion (d)iff (o)ff (v)uemeter
+boolean calibrate = false;
 boolean blur = false;
 boolean printThreshold = false;
 boolean printSLvl = false;
@@ -173,6 +174,7 @@ void setup() {
     frameRate(fRate);
     isInit = true;
     initIdx = 0;
+    capturedImgIdx = -1;
     bimg = createImage(w,h,ARGB);
     paintImg = createImage(w,h,RGB);//createBlackImage(w,h);
     edgeImg = createImage(w,h,ARGB);
@@ -233,7 +235,6 @@ void setOPCGrid(){
 
 Mat getCurrentMat()
 {
-
     if(opencv.getUseColor()){
         return opencv.matBGRA;
     } else{
@@ -268,9 +269,8 @@ void draw() {
            matToFilterOut = mOpenCV.imitate(matToFilterIn);
            matToFilterGray = mOpenCV.imitate(opencv.getGray());
            isInit = false;
-       } else if (detectionAlg == 'b'){
-           if(pgPlot == null)resetCalibrateLED();
-           isInit = false;
+       } else if (detectionAlg == 'c'){
+           captureImgsforCalibration();
        } else {
            isInit = false;
        }
@@ -298,26 +298,16 @@ void draw() {
         return;
     }
 
-   if (video.available() ) {
-       background(0);
-        video.read();
-        if(isPI) {
-            bimg.copy(video,0,0,w,h,0,0,w,h);
-        } else {
-            int croppedW = w*vh/h;
-            bimg.copy(video,(vw-croppedW)/2,0,croppedW,vh,0,0,w,h);
-        }
-   }
-   //else {
-   //      return;
-   //}
-
+    getNextVideoFrame();
     if (camMode){
         disp(bimg);
         return;
     }
-
-    opencv.loadImage(bimg);
+    if(capturedImgIdx < 0)
+        opencv.loadImage(bimg);
+    else{ //for calibration
+        opencv.loadImage(calibImg[capturedImgIdx]);
+    }
     if(detectionAlg == 'm')
         runMotionDetectionAlgorithm();
     else if (detectionAlg == 'e')
@@ -434,8 +424,12 @@ void runEdgeAlgorithm(float lvl){
         opencv.useColor();
     else
         opencv.useGray();
-
-    currentMean = (float)Core.mean(opencv.getGray()).val[0];
+    //getGray is empty if useColor is true when image is loaded into
+    //opencv. Since we are always switching to gray before switching
+    //to color, we're fine here.
+    //TODO figure out if best is to use ROI mean or full image mean
+    //currentMean = (float)Core.mean(opencv.getGray()).val[0];
+    currentMean = (float)Core.mean(opencv.getGray().rowRange(ROIRange[0],ROIRange[1])).val[0];
     if(oneShotPrint){
         println(lowThresh,highThresh,currentMean);
         oneShotPrint = false;
@@ -460,7 +454,7 @@ void runEdgeAlgorithm(float lvl){
     }
 
     //TODO bilateralFilter
-    if(calibForEdge){
+    if(calibrate){
         calibrateForEdge();
         opencv.findCannyEdges(lowThresh,highThresh);
     } else if(lowEdgeT.length != 0){
@@ -516,9 +510,10 @@ void insertAndSortCalibForEdge(){
     lowEdgeT = new int[tempL.length+1];
     highEdgeT = new int[tempH.length+1];
     int i, j;
+    float meanDiff;
     boolean notInsterted = true;
     for(i = 0, j = 0; i<tempM.length;i++,j++){
-        if(notInsterted && currentMean < tempM[i]){
+        if(notInsterted && (currentMean < tempM[i])){
             meanForT[j] = currentMean;
             lowEdgeT[j] = lowThresh;
             highEdgeT[j] = highThresh;
@@ -671,7 +666,7 @@ boolean runDiffAlgorithm(){
         image(diffImg,0,h);
       }
     //opencv.gray();
-    if(calibForEdge){
+    if(calibrate){
         opencv.threshold(lowThresh);
     }
     else if(autoThreshold) {
@@ -962,7 +957,7 @@ void disp(PImage vid) {
     //if(xflip)
     //      image(vid, 0, 0,width,height,width,0,0,height );
     //  else
-    if(calibForEdge){
+    if(calibrate){
         image(vid,w,h);
     } else {
         image(vid,0,0);
@@ -971,6 +966,81 @@ void disp(PImage vid) {
     //image(vid,w*(1-dispScale)/2,h*(1-dispScale)/2,w*dispScale,h*dispScale);
 }
 
+void getNextVideoFrame(){
+    if (video.available() ) {
+        background(0);
+        video.read();
+        if(isPI) {
+            bimg.copy(video,0,0,w,h,0,0,w,h);
+        } else {
+            int croppedW = w*vh/h;
+            bimg.copy(video,(vw-croppedW)/2,0,croppedW,vh,0,0,w,h);
+        }
+    }
+    //else {
+    //      return;
+    //}
+}
+
+void liveImg(){
+    capturedImgIdx = -1;
+    println("Live");
+}
+void prevImg(){
+    if(calibImg == null){
+        println("No captured images");
+    } else {
+        if(capturedImgIdx > 0){
+            capturedImgIdx--;;
+            println("frame",capturedImgIdx);
+        }
+        else
+            println("reached beginning frames");
+    }
+}
+
+void nextImg(){
+    if(calibImg == null){
+        println("No captured images");
+    } else {
+        if(capturedImgIdx < calibImg.length-1){
+            capturedImgIdx++;
+            println("frame",capturedImgIdx);
+        }
+        else
+            println("reached end frames");
+    }
+}
+
+void captureImgsforCalibration(){
+    if (initIdx == 0){
+        calibImg = new PImage[nBimgs];
+        meanForCalib = new float[nBimgs];
+        //always capture colored images
+        opencv.useColor();
+    } else if(initIdx == nBimgs) {
+        detectionAlg = prevDetectionAlg;
+        initIdx = 0;
+        isInit = false;
+        sortImgs(meanForCalib,calibImg);
+        //revert to colormode
+        if(!useColor) opencv.useGray();
+        return;
+    }
+
+    spread(initIdx*numStrips,100,numLedPerStrip/3,0);
+    delay(500);
+    getNextVideoFrame();
+    opencv.loadImage(bimg);
+    Mat matGray = mOpenCV.gray(opencv.matBGRA);
+    meanForCalib[initIdx] = (float)Core.mean(matGray.rowRange(ROIRange[0],ROIRange[1])).val[0];
+    calibImg[initIdx] = bimg.get();
+    if(debugMode){
+        image(opencv.getOutput(),w,0);
+    }
+    println("Capture",initIdx,"Mean",meanForCalib[initIdx]);
+    initIdx++;
+}
 void initDiffAlgorithm(){
     if (!video.available() ){
         delay(10);
@@ -1080,7 +1150,7 @@ void initDiffAlgorithm(){
         return;
     }
     //sort energy and mean levels and backgrounds
-    sortBackgrounds();
+    sortImgs(bImgsMean,bImgsMatGray);
     initIdx = 0;
     isInit = false;
 }
@@ -1152,7 +1222,6 @@ public  class mOpenCV extends OpenCV{
     public void findCannyEdges(int lowThreshold, int highThreshold){
         Imgproc.Canny(getCurrentMat(), getGray(), lowThreshold, highThreshold);
     }
-
 }
 void getChannel(PImage in, PImage out, int mask){
 
@@ -1167,22 +1236,44 @@ void getChannel(PImage in, PImage out, int mask){
 
 }
 
-void sortBackgrounds(){
+void sortImgs(float[] meanArr, Mat[] matArr){
 
-    // Sort int bImgsEnergy ,float bImgsMean, Mat bImgsMatGray
+    // Sort int bImgsEnergy ,float meanArr, Mat matArr
     float tempMean;
     Mat tempImgs;
     if(useMeanforBg) { // else sort by energy
-        for(int i = 1; i < bImgsMean.length; i++){
+        for(int i = 1; i < meanArr.length; i++){
             for (int j = i; j > 0; j --){
-                if(bImgsMean[j] < bImgsMean[j-1]){
+                if(meanArr[j] < meanArr[j-1]){
                     //swap
-                    tempMean = bImgsMean[j];
-                    bImgsMean[j] = bImgsMean[j-1];
-                    bImgsMean[j-1] = tempMean;
-                    tempImgs = bImgsMatGray[j];
-                    bImgsMatGray[j] = bImgsMatGray[j-1];
-                    bImgsMatGray[j-1] = tempImgs;
+                    tempMean = meanArr[j];
+                    meanArr[j] = meanArr[j-1];
+                    meanArr[j-1] = tempMean;
+                    tempImgs = matArr[j];
+                    matArr[j] = matArr[j-1];
+                    matArr[j-1] = tempImgs;
+
+                }
+            }
+        }
+    }
+}
+void sortImgs(float[] meanArr, PImage[] imgArr){
+
+    // Sort int bImgsEnergy ,float meanArr, Mat matArr
+    float tempMean;
+    PImage tempImgs;
+    if(useMeanforBg) { // else sort by energy
+        for(int i = 1; i < meanArr.length; i++){
+            for (int j = i; j > 0; j --){
+                if(meanArr[j] < meanArr[j-1]){
+                    //swap
+                    tempMean = meanArr[j];
+                    meanArr[j] = meanArr[j-1];
+                    meanArr[j-1] = tempMean;
+                    tempImgs = imgArr[j];
+                    imgArr[j] = imgArr[j-1];
+                    imgArr[j-1] = tempImgs;
 
                 }
             }

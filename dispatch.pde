@@ -12,41 +12,8 @@ void dispatch2() {
 
 void dispatch() {
 
-    if (detectionAlg == 'c'){
-        switch(key) {
-        case 'i': //insert plot point
-            insertPlotData();
-            lastKey = 0;
-            return;
-        case 'r': //reset
-            resetCalibrateLED();
-            lastKey = 0;
-            return;
-        case ';':
-            if(numLedOn >= numStrips) numLedOn -= numStrips;
-            println("numLedOn:", numLedOn);
-            lastKey = 0;
-            return;
-        case '.':
-            if(ledIntensity >= 10) ledIntensity -= 10;
-            println("Led intensity:", ledIntensity);
-            lastKey = 0;
-            return;
-        case '\'':
-            if(numLedOn < (numStrips-1)*numLedPerStrip*2/3) numLedOn += numStrips;
-            println("numLedOn:", numLedOn);
-            lastKey = 0;
-            return;
-        case '/':
-            if(ledIntensity < 245) ledIntensity += 10;
-            println("Led intensity:", ledIntensity);
-            lastKey = 0;
-            return;
-        }
 
-    }
-
-    if(calibForEdge && (detectionAlg == 'e' || detectionAlg == 'd')){
+    if(calibrate && (detectionAlg == 'e' || detectionAlg == 'd')){
         switch(key) {
         case 'l': //load to array
             loadCalibForEdge(detectionAlg);
@@ -108,6 +75,25 @@ void dispatch() {
             oneShotPrint = true;
             lastKey = 0;
             return;
+        case 'c': //capture
+            prevDetectionAlg = detectionAlg;
+            detectionAlg = 'c';
+            isInit = true;
+            lastKey = 0;
+            return;
+        case '1': //go back a frame
+            prevImg();
+            lastKey = 0;
+            return;
+        case '2': //go back a frame
+            nextImg();
+            lastKey = 0;
+            return;
+        case '3': //live feed
+            liveImg();
+            lastKey = 0;
+            return;
+
         }
 
     }
@@ -177,19 +163,14 @@ void dispatch() {
             detectionAlg = 'v';
             isInit = true;
             break;
-        case 'l': //(c)alibrate
-            detectionAlg = 'c';
-            isInit = true;
-            println("(;,') border width, (.,/) border color");
-            break;
         case 'b': //calibrate
-            if(calibForEdge) {
-                calibForEdge = false;
+            if(calibrate) {
+                calibrate = false;
                 println("Calibration Off");
             } else if(detectionAlg != 'e' && detectionAlg != 'd')
                 println("Need to be in edge or diff mode for calibration");
             else {
-                calibForEdge = true;
+                calibrate = true;
                 debugMode = true;
                 if(!isPI){
                     surface.setSize(w*2, h*2);
@@ -197,8 +178,10 @@ void dispatch() {
                 }
                 println("Calibration On");
                 println("Calibration : (i)nsert, (r)eset, (l)oad, (s)ave");
+                println("Calibration : (c)apture, (1)previous, (2)next, (3)live");
                 println("(;,') high thresh adjusment, (.,/) high thresh adjusment");
                 println("(j,k) num of LED, (n,m) LED intensity");
+
             }
             break;
         }
@@ -347,7 +330,7 @@ void dispatch() {
         println("Print: (s)ound lvl, (t)hreshold, (e)nergy, (o)neShotPrint ");
         break;
     case 'v':
-        println("Video: (m)onitor, (p)aint, (c)ontour, (t)est, , motio(n) detection mode, (e)dge detection, cali(b)rate Edge, ca(l)ibrate LED, (d)iff, (o)ff ");
+        println("Video: (m)onitor, (p)aint, (c)ontour, (t)est, , motio(n) detection mode, (e)dge detection, cali(b)rate, (d)iff, (o)ff ");
         println("debug bac(k)ground, (v)uemeter");
 
         break;
@@ -448,7 +431,7 @@ void dispatch() {
         println("(i)nit, (d)ebug, (s)ound, (v)ideo");
         println("(t)hreshold mode, (z)stop, (q)uit");
 
-        if(calibForEdge) {
+        if(calibrate) {
             println("Calibration : (i)nsert, (r)eset");
         }
         break;
