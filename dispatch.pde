@@ -12,7 +12,19 @@ void dispatch2() {
 
 void dispatch() {
 
+    if(detectionAlg == 'v'){ //vu meters
+        switch(key) {
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+            vuAlg = key;
+            lastKey = 0;
+            return;
+        }
 
+    }
     if(calibrate && (detectionAlg == 'e' || detectionAlg == 'd')){
         switch(key) {
         case 'l': //load to array
@@ -161,6 +173,8 @@ void dispatch() {
             break;
         case 'v': //vumeter
             detectionAlg = 'v';
+            println("make sure audiosource enabled");
+            println("vue meter: (1-5)");
             isInit = true;
             break;
         case 'b': //calibrate
@@ -196,11 +210,13 @@ void dispatch() {
         switch(key) {
         case 'o':
             minim.stop();
+            audioSource = null;
             soundMode = "noSound";
             println("Sound Off");
             break;
         case 't':
             minim.stop();
+            audioSource = null;
             soundMode = "test";
             break;
         case 'g':
@@ -226,6 +242,7 @@ void dispatch() {
             break;
         case 'n':
             minim.stop();
+            audioSource = null;
             soundMode = "net";
             lowLvl = mLowLvl;
             highLvl = mHighLvl;

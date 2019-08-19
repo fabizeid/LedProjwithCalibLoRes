@@ -91,6 +91,7 @@ boolean enableContour = true;
 boolean stopLoop = false;
 boolean saveContour = false;
 char prevDetectionAlg, detectionAlg = 'e'; //(c)alibrate (e)dge (m)otion (d)iff (o)ff (v)uemeter
+char vuAlg = '4';
 boolean calibrate = false;
 boolean blur = false;
 boolean printThreshold = false;
@@ -205,6 +206,7 @@ void setup() {
         highLvl = gHighLvl;
     } else if(soundMode.equals("net")){
             audioserver = new AudioServer(aport);
+            audioSource = null;
     }
     maxVal = 0;
     borderWidth = 0;
@@ -294,7 +296,7 @@ void draw() {
     }
     if(detectionAlg == 'v') {
         background(0);
-        vuOPC(lvl);
+        runVuAlg(lvl);
         return;
     }
 
@@ -333,17 +335,6 @@ void draw() {
     if(enableContour) contourAudio(lvl*audioGain);
     if(numLedOn > 0) spread(numLedOn,ledIntensity,numLedPerStrip/3,0);
     if(borderWidth > 0) border();
-    /*
-      stroke(0, 0, 255);
-      strokeWeight(3);
-      int lidx = 3*width/8;
-      for(int i = 0; i < audioSource.bufferSize() - 1; i+=4*audioSource.bufferSize()/width)
-      {
-      line(lidx, height-50  + audioSource.mix.get(i)*100,  lidx+1, height - 50+ audioSource.mix.get(i+1)*100);
-      lidx++;
-      }*/
-    //float position = map( audioSource.position(), 0, audioSource.length(), 0, width );
-    //rect( 0, 0, audioSource.mix.level()*width, 100 );
 
 }
 void keyPressed() {
@@ -1028,7 +1019,6 @@ void captureImgsforCalibration(){
         return;
     }
 
-    spread(initIdx*numStrips,100,numLedPerStrip/3,0);
     delay(500);
     getNextVideoFrame();
     opencv.loadImage(bimg);
@@ -1038,6 +1028,7 @@ void captureImgsforCalibration(){
     if(debugMode){
         image(opencv.getOutput(),w,0);
     }
+    spread((initIdx+1)*numStrips,100,numLedPerStrip/3,0);
     println("Capture",initIdx,"Mean",meanForCalib[initIdx]);
     initIdx++;
 }
@@ -1281,7 +1272,65 @@ void sortImgs(float[] meanArr, PImage[] imgArr){
     }
 }
 
+void runVuAlg(float lvl){
+    switch(vuAlg) {
+    case '1':
+        vuOPC(lvl);
+        break;
+    case '2':
+        vu1OPC(lvl);
+        break;
+    case '3':
+        vu3OPC(lvl);
+        break;
+    case '4':
+        waveOPC();
+        break;
+    case '5':
+        wave();
+        break;
+    }
+}
 
+void waveOPC(){
+    if(audioSource == null) return;
+    int pixIdx,x;
+    final int xOffset = numStrips/2;
+    int ratio = audioSource.bufferSize()/h;
+    final int bufSamplingDivisor = 4;
+    loadPixels();
+    for(int i=0; i<numLedPerStrip; i++) {
+        //only sampling part of the buffer since sampling the whole buf will
+        //produce too many antialiasing effects
+        int bufIdx = (int)map(i,0,numLedPerStrip*bufSamplingDivisor,0,audioSource.bufferSize());
+        int bufVal = (int)(audioSource.mix.get(bufIdx)*30);
+        x = xOffset+bufVal;
+        x = constrain(x,0,numStrips-1);
+        pixIdx = opc.pixelLocations[ i + numLedPerStrip*x];
+        pixels[pixIdx] = Wheel(map(abs(bufVal),0,xOffset,30,150));
+    }
+    updatePixels();
+    //rect( 0, 0, audioSource.mix.level()*width, 100 );
+
+}
+
+void wave(){
+    if(audioSource == null) return;
+    stroke(0, 0, 255);
+    strokeWeight(4);
+    int bufIdx,bufIdxPrev = 0,iPrev = 0;
+    final int xInit = w/2;
+    int ratio = audioSource.bufferSize()/h;
+    for(int i = 0; i < h; i+=2){
+        bufIdx = (int)map(i,0,h,0,audioSource.bufferSize()-1);
+        line(xInit+audioSource.mix.get(bufIdxPrev)*100, iPrev, xInit+audioSource.mix.get(bufIdx)*100,i);
+        bufIdxPrev = bufIdx;
+        iPrev = i;
+    }
+
+    //rect( 0, 0, audioSource.mix.level()*width, 100 );
+
+}
 void vuOPC(float lvl) {
     int i,n,idx;
     int height;
@@ -1370,6 +1419,7 @@ void vu3OPC(float lvl) {
     n = int(lvl*512);
     height = int(map(n, minLvlAvg,maxLvlAvg,0,TOP));
     if (height > peak)     peak   = height; // Keep 'peak' dot at top
+    loadPixels();
     greenOffset += SPEED;
     blueOffset += SPEED;
     if (greenOffset >= 255) greenOffset = 0;
