@@ -52,11 +52,6 @@ int gestureState;
 int gestureSweepCount;
 int lastBorderCheck; //ms
 int borderWidth,borderColor,numLedOn,ledIntensity;
-final float gLowLvl = .02;
-final float gHighLvl = .3;
-final float mLowLvl =  0;
-final float mHighLvl = .5;
-float lowLvl,highLvl;
 BackgroundSubtractorMOG backgroundSubtractor;
 
 //min supported res (also multiple of OPC grid)
@@ -90,8 +85,8 @@ boolean enablePaint = false;
 boolean enableContour = true;
 boolean stopLoop = false;
 boolean saveContour = false;
-char prevDetectionAlg, detectionAlg = 'e'; //(c)alibrate (e)dge (m)otion (d)iff (o)ff (v)uemeter
-char vuAlg = '4';
+char prevDetectionAlg, detectionAlg = 'v'; //(c)alibrate (e)dge (m)otion (d)iff (o)ff (v)uemeter
+char vuAlg = '1';
 boolean calibrate = false;
 boolean blur = false;
 boolean printThreshold = false;
@@ -102,8 +97,8 @@ boolean useMeanforBg = true;
 
 int lowThresh;
 int highThresh;
-int contScale = 1;
 int minContourSize = 3000;
+float dynRangefactor = 100;
 float audioGain = 1;
 final boolean enableGesture = false;
 final int gestureIdx1 = 0;
@@ -124,16 +119,18 @@ int PEAK_FALL = 2; //Rate of falling peak dot
 int SAMPLES = 60;  // Length of buffer for dynamic level adjustment
 int TOP = (numLedPerStrip + 2); // Allow dot to go slightly off scale
 float SPEED = .20;       // Amount to increment RGB color by each cycle
-int
-    vol[] = new int[SAMPLES],       // Collection of prior volume samples
+float
+    vol[] = new float[SAMPLES],       // Collection of prior volume samples
     minLvlAvg = 0,      // For dynamic adjustment of graph low & high
-    maxLvlAvg = 512;
+    maxLvlAvg = .5;//512;
 float
   greenOffset = 30,
   blueOffset = 150;
-int volCount  = 0;      // Frame counter for storing past volume data
+int volCount  = 0,      // Frame counter for storing past volume data
+    currentStrip  = numStrips/2;
 float maxVal;
 int peak = 16;      // Peak level of column; used for falling dots
+int peaks[] = new int[numStrips];
 int dotCount = 0;  //Frame counter for peak dot
 
 /*****************************************************************/
@@ -196,14 +193,10 @@ void setup() {
     if(soundMode.equals("mic")){
         mic = minim.getLineIn();
         audioSource = mic;
-        lowLvl = mLowLvl;
-        highLvl = mHighLvl;
     } else if(soundMode.equals("groove")){
         groove = minim.loadFile(songPath);
         groove.loop();
         audioSource = groove;
-        lowLvl = gLowLvl;
-        highLvl = gHighLvl;
     } else if(soundMode.equals("net")){
             audioserver = new AudioServer(aport);
             audioSource = null;
@@ -290,10 +283,12 @@ void draw() {
     } else if(soundMode.equals("net")){
         lvl = (float)audioserver.get();
         lvl =  map( lvl,0.02,.3*255,0,1);
+        lvl *= audioGain;
     } else {
         lvl = audioSource.mix.level();
-        lvl =  map( lvl,lowLvl,highLvl,0,1);
+        dynRange(lvl);
     }
+
     if(detectionAlg == 'v') {
         background(0);
         runVuAlg(lvl);
@@ -313,15 +308,15 @@ void draw() {
     if(detectionAlg == 'm')
         runMotionDetectionAlgorithm();
     else if (detectionAlg == 'e')
-        runEdgeAlgorithm(lvl*audioGain);
+        runEdgeAlgorithm(lvl);
     else if (detectionAlg == 'd'){
         if(runDiffAlgorithm()) return;
     }
     else if (detectionAlg == 'c')
         calibrateLED();
 
-    if(printSLvl)
-        println("Sound lvl: ",lvl*audioGain);
+    //  if(printSLvl)
+    //    println("Sound lvl: ",lvl*audioGain);
 
     //image(opencv.getOutput(),0,0);
     //if(true) return;
@@ -332,10 +327,10 @@ void draw() {
         saveContour = false;
     }
 
-    if(enableContour) contourAudio(lvl*audioGain);
+    if(enableContour) contourAudio(lvl);
     if(numLedOn > 0) spread(numLedOn,ledIntensity,numLedPerStrip/3,0);
     if(borderWidth > 0) border();
-
+    oneShotPrint = false;
 }
 void keyPressed() {
     delay(100);
@@ -423,7 +418,6 @@ void runEdgeAlgorithm(float lvl){
     currentMean = (float)Core.mean(opencv.getGray().rowRange(ROIRange[0],ROIRange[1])).val[0];
     if(oneShotPrint){
         println(lowThresh,highThresh,currentMean);
-        oneShotPrint = false;
     }
     if(blur){
         if(useColor){
@@ -453,7 +447,7 @@ void runEdgeAlgorithm(float lvl){
         //TODO if needed: interpolate between i and i+1 values of thresholds
         if(printThreshold) println(i,currentMean,meanForT[i],lowEdgeT[i],highEdgeT[i]);
         opencv.findCannyEdges(lowEdgeT[i],highEdgeT[i]);
-    } else {
+    } else if(autoThreshold) {
         //from http://justin-liang.com/tutorials/canny/
         //highThreshold = max(max(im))*highThresholdRatio;
         //lowThreshold = highThreshold*lowThresholdRatio;
@@ -471,17 +465,18 @@ void runEdgeAlgorithm(float lvl){
 	//edged = cv2.Canny(image, lower, upper)
         //opencv.findCannyEdges(lowThresh,(int)currentMean);
         opencv.findCannyEdges(lowThresh,highThresh);
+    } else {
+        opencv.findCannyEdges(lowThresh,highThresh);
     }
     opencv.useGray();
     opencv.dilate();
+    //opencv.erode();
     if(debugMode){
         diffImg.copy(opencv.getOutput(),0,0,w,h,0,0,w,h);
         image(diffImg,0,h);
     }
     if(enablePaint) paint();
-    lvl =  map(lvl,0,1,0,numlevelColors);
-    lvl = constrain(lvl,0,numlevelColors);
-    //mapToGrid(opencv.getOutput(),edgeImg,(int)round(lvl));
+    mapToGrid(opencv.getOutput(),edgeImg,lvl);
     //mapToGrid(opencv.getOutput(),edgeImg,0);
 
 }
@@ -680,7 +675,6 @@ boolean runDiffAlgorithm(){
 
     if(false & oneShotPrint){
         println(lowThresh,currentMean);
-        oneShotPrint = false;
     }
 
     if(debugMode){
@@ -713,7 +707,7 @@ void mapToGrid(PImage img){
     }
     updatePixels();
 }
-void mapToGrid(PImage imgSrc,PImage imgDest,int lvl){
+void mapToGrid(PImage imgSrc,PImage imgDest,float lvl){
     int picIdx,imgPicIdx,pixel;
     int circIdx = 0;
     int numPixels = opc.pixelLocations.length;
@@ -721,22 +715,29 @@ void mapToGrid(PImage imgSrc,PImage imgDest,int lvl){
     color c = color(255,0,0);
     imgDest.loadPixels();
     imgSrc.loadPixels();
+    //lvl = map(lvl, minLvlAvg,maxLvlAvg,0,numlevelColors);
+    //lvl *= audioGain;
+    //lvl = (int)round(constrain(lvl,0,numlevelColors));
+    lvl *= audioGain;
+    lvl = map(lvl, minLvlAvg,maxLvlAvg,30,150);
+
     //println(pixels.length,img.pixels.length);
     for (int i = 0; i < numPixels; i++) {
         picIdx = opc.pixelLocations[i];
         imgPicIdx = picIdx-(width-imgSrc.width)*(picIdx/width);
         pixel = imgSrc.pixels[imgPicIdx];
         if(pixel == 0xFFFFFFFF){
-            imgDest.pixels[imgPicIdx] = 0xFFAA0000;//levelColor[0];//0xFFFF0000;
-            for (int j=0; j<lvl ;j++) {
-                int curIdx = (circIdx-j/2);
-                if (curIdx < 0) curIdx += numlevelColors;
-                int histIdx = idxHist[curIdx];
-                imgDest.pixels[histIdx] = levelColor[j];
+            //imgDest.pixels[imgPicIdx] = 0xFFAA0000;//levelColor[0];//0xFFFF0000;
+            imgDest.pixels[imgPicIdx] = Wheel(lvl);
+            //for (int j=0; j<lvl ;j++) {
+            //    int curIdx = (circIdx-j/2);
+            //    if (curIdx < 0) curIdx += numlevelColors;
+            //    int histIdx = idxHist[curIdx];
+            //    imgDest.pixels[histIdx] = levelColor[j];
 
                 //imgDest.pixels[idxHist[(circIdx-j)%numlevelColors]]
                 //    = levelColor[j];
-            }
+            //}
 
         } else {
               imgDest.pixels[imgPicIdx] = 0x00000000;
@@ -889,8 +890,10 @@ void contourAudio(float lvl) {
     setColorMode("RGB");
     pg.beginDraw();
     pg.noFill();
+    //pg.fill(255,0,0);
     getsnapshot = false;
-
+    lvl = map(lvl, minLvlAvg,maxLvlAvg,0,1);
+    lvl *= audioGain;
     if(lvl > 1) {
         pg.stroke(250,250,250);
         getsnapshot = true;
@@ -912,24 +915,17 @@ void contourAudio(float lvl) {
         pg.image(contImg,-3,-5,pg.width+7,pg.height+7);
     if(!getsnapshot) contImg = pg.get();//get img before current contour
     Mat tempMat = opencv.getGray();
-    if(contScale > 1)
-        Imgproc.resize(opencv.getGray(),opencv.getGray(),new Size(),contScale,contScale,Imgproc.INTER_LINEAR);
-//    if(debugMode){
-//      image(opencv.getSnapshot(),w,h);
-//    }
 
     for (Contour contour : opencv.findContours(false,false)) {
         if (contour.area() > minContourSize) {
             points = contour.getPoints();
             pg.beginShape();
             for (PVector p : points) {
-                 pg.vertex(p.x/contScale, p.y/contScale);
-                //pg.vertex(p.x, p.y);
+                pg.vertex(p.x, p.y);
             }
             pg.endShape(PConstants.CLOSE);
         }
     }
-    //if(contScale > 1) opencv.matGray = tempMat;
     pg.endDraw();
     if(getsnapshot) contImg = pg.get(); //get img after contour
     disp(contImg);
@@ -1162,19 +1158,19 @@ int getMeanRoundIdx(float meanVal,float [] meanArr){
     while(meanVal > meanArr[i]){
         i++;
         if(i == meanArr.length) {
-            if(oneShotPrint){int idx = i-1; println(meanVal +" "+(meanArr[idx]-meanVal)+ " " + idx +" " + meanArr[idx]);oneShotPrint = false;}
+            if(oneShotPrint){int idx = i-1; println(meanVal +" "+(meanArr[idx]-meanVal)+ " " + idx +" " + meanArr[idx]);}
             // println(meanVal,i-1);
             return i-1;
         }
     }
     if((meanArr[i]-meanVal) > (meanVal - meanArr[i-1])){
         //println(meanVal,i-1);
-        if(oneShotPrint){int idx = i-1; println(meanVal +" "+ (meanArr[idx]-meanVal)+ " " + idx +" " + meanArr[idx] + " " +meanArr[i]);oneShotPrint = false;}
+        if(oneShotPrint){int idx = i-1; println(meanVal +" "+ (meanArr[idx]-meanVal)+ " " + idx +" " + meanArr[idx] + " " +meanArr[i]);}
 
         return i-1;
     } else {
         //println(meanVal,i);
-        if(oneShotPrint){int idx = i; println(meanVal +" "+ (meanArr[idx]-meanVal)+ " " + idx +" " + meanArr[idx-1] + " " +meanArr[idx]);oneShotPrint = false;}
+        if(oneShotPrint){int idx = i; println(meanVal +" "+ (meanArr[idx]-meanVal)+ " " + idx +" " + meanArr[idx-1] + " " +meanArr[idx]);}
         return i;
     }
 }
@@ -1289,6 +1285,9 @@ void runVuAlg(float lvl){
     case '5':
         wave();
         break;
+    case '6':
+        vu3mOPC(lvl);
+        break;
     }
 }
 
@@ -1296,21 +1295,31 @@ void waveOPC(){
     if(audioSource == null) return;
     int pixIdx,x;
     final int xOffset = numStrips/2;
-    int ratio = audioSource.bufferSize()/h;
-    final int bufSamplingDivisor = 4;
+    final int bufSamplingDivisor = 8;
+    final float a = 50;
+    float ratio,bufVal,valCol, maxlvl=0;
     loadPixels();
     for(int i=0; i<numLedPerStrip; i++) {
         //only sampling part of the buffer since sampling the whole buf will
         //produce too many antialiasing effects
         int bufIdx = (int)map(i,0,numLedPerStrip*bufSamplingDivisor,0,audioSource.bufferSize());
-        int bufVal = (int)(audioSource.mix.get(bufIdx)*30);
-        x = xOffset+bufVal;
+        bufVal = audioSource.mix.get(bufIdx);
+        maxlvl = max(maxlvl,abs(bufVal));
+        bufVal = bufVal*dynRangefactor*audioGain;
+        x = xOffset+int(bufVal);
         x = constrain(x,0,numStrips-1);
         pixIdx = opc.pixelLocations[ i + numLedPerStrip*x];
-        pixels[pixIdx] = Wheel(map(abs(bufVal),0,xOffset,30,150));
+        valCol = map(abs(bufVal),0,xOffset,30,150);
+        if(valCol > 200) valCol = 200;
+        pixels[pixIdx] = Wheel(valCol);
     }
     updatePixels();
-    //rect( 0, 0, audioSource.mix.level()*width, 100 );
+    ratio = xOffset/(maxlvl*2);
+    if(ratio > 2000) ratio = 2000;
+    dynRangefactor = (dynRangefactor*(a-1) + ratio)/a;
+    if(oneShotPrint){
+        println("dynrangefac",dynRangefactor);
+    }
 
 }
 
@@ -1319,24 +1328,33 @@ void wave(){
     stroke(0, 0, 255);
     strokeWeight(4);
     int bufIdx,bufIdxPrev = 0,iPrev = 0;
-    final int xInit = w/2;
-    int ratio = audioSource.bufferSize()/h;
+    final int xOffset = w/2;
+    final float a = 50;
+    float ratio;
+    float val,maxlvl=0;
     for(int i = 0; i < h; i+=2){
         bufIdx = (int)map(i,0,h,0,audioSource.bufferSize()-1);
-        line(xInit+audioSource.mix.get(bufIdxPrev)*100, iPrev, xInit+audioSource.mix.get(bufIdx)*100,i);
+        val = audioSource.mix.get(bufIdx);
+        maxlvl = max(maxlvl,abs(val));
+        line(xOffset+audioSource.mix.get(bufIdxPrev)*dynRangefactor*audioGain, iPrev, xOffset+val*dynRangefactor*audioGain,i);
         bufIdxPrev = bufIdx;
         iPrev = i;
     }
-
+    ratio = xOffset/maxlvl;
+    if(ratio > 2000) ratio = 2000;
+    dynRangefactor = (dynRangefactor*(a-1) + ratio)/a;
+    if(oneShotPrint){
+        println("dynrangefac",dynRangefactor);
+    }
+    //dynRangefactor = (xOffset*a)/(dynRangefactor * (a-1) + maxlvl);
     //rect( 0, 0, audioSource.mix.level()*width, 100 );
 
 }
 void vuOPC(float lvl) {
-    int i,n,idx;
+    int i,idx;
     int height;
     int x = numStrips/2;
-    n = int(lvl*512);
-    height = int(map(n, minLvlAvg,maxLvlAvg,0,TOP));
+    height = int(map(lvl, minLvlAvg,maxLvlAvg,0,TOP-10)*audioGain);
     if(height > peak)     peak = height; // Keep 'peak' dot at top
     loadPixels();
     // Color pixels based on rainbow gradient
@@ -1360,15 +1378,13 @@ void vuOPC(float lvl) {
         if(peak > 0) peak--;
         dotCount = 0;
     }
-    dynRange(n);
 }
 
 void vu1OPC(float lvl) {
-    int i,n,colr,idx;
+    int i,colr,idx;
     int height;
-    n = int(lvl*512);
     int x = numStrips/2;
-    height = int(map(n, minLvlAvg,maxLvlAvg,0,TOP));
+    height = int(map(lvl, minLvlAvg,maxLvlAvg,0,TOP-10)*audioGain);
     if(height > peak)     peak = height; // Keep 'peak' dot at top
     loadPixels();
     // Color pixels based on rainbow gradient
@@ -1405,19 +1421,13 @@ void vu1OPC(float lvl) {
         if(peak > 0) peak--;
         dotCount = 0;
     }
-
-
-
-
-    dynRange(n);
 }
 
 void vu3OPC(float lvl) {
-    int i,n,colr,idx;
+    int i,colr,idx;
     int height;
     int x = numStrips/2;
-    n = int(lvl*512);
-    height = int(map(n, minLvlAvg,maxLvlAvg,0,TOP));
+    height = int(map(lvl, minLvlAvg,maxLvlAvg,0,TOP-10)*audioGain);
     if (height > peak)     peak   = height; // Keep 'peak' dot at top
     loadPixels();
     greenOffset += SPEED;
@@ -1447,14 +1457,51 @@ void vu3OPC(float lvl) {
         if(peak > 0) peak--;
         dotCount = 0;
     }
+}
+void vu3mOPC(float lvl) {
+    int i,colr,idx;
+    int height;
+    height = int(map(lvl, minLvlAvg,maxLvlAvg,0,TOP-10)*audioGain);
+    if (height > peak) {
+        peak   = height; // Keep 'peak' dot at top
+        currentStrip = (int)random(0,numStrips-1);
+        peaks[currentStrip] = peak;
+    }
+    int x = currentStrip;
+    loadPixels();
+    greenOffset += SPEED;
+    blueOffset += SPEED;
+    if (greenOffset >= 255) greenOffset = 0;
+    if (blueOffset >= 255) blueOffset = 0;
+    // Color pixels based on rainbow gradient
+    for(i=0; i<numLedPerStrip; i++) {
+        idx = opc.pixelLocations[ i + numLedPerStrip*x];
+        if(i >= height)
+            pixels[idx] = 0;
+        else
+            pixels[idx] = Wheel(map(i,0,numLedPerStrip-1,(int)greenOffset, (int)blueOffset));
+    }
 
-
-    dynRange(n);
+    for(int j=0;j<numStrips;j++){
+        // Draw peak dot
+        if(peaks[j] > 0 && peaks[j] <= numLedPerStrip-1){
+            idx = opc.pixelLocations[ peaks[j] + numLedPerStrip*j];
+            pixels[idx] = Wheel(map(peaks[j],0,numLedPerStrip-1,30,150));
+        }
+    }
+    updatePixels();
+    // Every few frames, make the peak pixel drop by 1:
+    if(++dotCount >= PEAK_FALL) { //fall rate
+        for(int j=0;j<numStrips;j++)
+            if(peaks[j] > 0) peaks[j]--;
+        if(peak > 0) peak--;
+        dotCount = 0;
+    }
 }
 
-void dynRange(int n){
-    if(true)return;
-    int i,minLvl, maxLvl;
+void dynRange(float n){
+    int i;
+    float minLvl, maxLvl;
     vol[volCount] = n;                      // Save sample for dynamic leveling
     if(++volCount >= SAMPLES) volCount = 0; // Advance/rollover sample counter
 
@@ -1470,22 +1517,26 @@ void dynRange(int n){
     // (e.g. at very low volume levels) the graph becomes super coarse
     // and 'jumpy'...so keep some minimum distance between them (this
     // also lets the graph go to zero when no sound is playing):
-    if((maxLvl - minLvl) < TOP*12) maxLvl = minLvl + TOP*12;
-    minLvlAvg = (minLvlAvg * 63 + minLvl) >>> 6; // Dampen min/max levels
-    maxLvlAvg = (maxLvlAvg * 63 + maxLvl) >>> 6; // (fake rolling average)
+    // if((maxLvl - minLvl) < TOP*12) maxLvl = minLvl + TOP*12;
+    if((maxLvl - minLvl) < 1e-3 ) maxLvl = minLvl + 1e-3;
+    //minLvlAvg = (minLvlAvg * 63 + minLvl) >>> 6; // Dampen min/max levels
+    //maxLvlAvg = (maxLvlAvg * 63 + maxLvl) >>> 6; // (fake rolling average)
+    minLvlAvg = (minLvlAvg * 63 + minLvl)/64; // Dampen min/max levels
+    maxLvlAvg = (maxLvlAvg * 63 + maxLvl)/64; // (fake rolling average)
+    //if(volCount == 0)println(n,minLvl,maxLvl,minLvlAvg,maxLvlAvg,(maxLvl - minLvl));
 }
 
 // Input a value 0 to 255 to get a color value.
 // The colors are a transition r - g - b - back to r.
 int Wheel(float fWheelPos) {
     int WheelPos = (int)fWheelPos;
-  if(WheelPos < 85) {
-   return color(WheelPos * 3, 255 - WheelPos * 3, 0);
-  } else if(WheelPos < 170) {
-   WheelPos -= 85;
-   return color(255 - WheelPos * 3, 0, WheelPos * 3);
-  } else {
-   WheelPos -= 170;
-   return color(0, WheelPos * 3, 255 - WheelPos * 3);
-  }
+    if(WheelPos < 85) {
+        return color(WheelPos * 3, 255 - WheelPos * 3, 0);
+    } else if(WheelPos < 170) {
+        WheelPos -= 85;
+        return color(255 - WheelPos * 3, 0, WheelPos * 3);
+    } else {
+        WheelPos -= 170;
+        return color(0, WheelPos * 3, 255 - WheelPos * 3);
+    }
 }

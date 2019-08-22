@@ -19,6 +19,7 @@ void dispatch() {
         case '3':
         case '4':
         case '5':
+        case '6':
             vuAlg = key;
             lastKey = 0;
             return;
@@ -225,8 +226,6 @@ void dispatch() {
             groove = minim.loadFile(songPath);
             groove.loop();
             audioSource = groove;
-            lowLvl = gLowLvl;
-            highLvl = gHighLvl;
             println("Music On");
             delay(2000);
             break;
@@ -235,8 +234,6 @@ void dispatch() {
             soundMode = "mic";
             mic = minim.getLineIn(Minim.MONO);
             audioSource = mic;
-            lowLvl = mLowLvl;
-            highLvl = mHighLvl;
             println("Mic On");
             delay(2000);
             break;
@@ -244,8 +241,6 @@ void dispatch() {
             minim.stop();
             audioSource = null;
             soundMode = "net";
-            lowLvl = mLowLvl;
-            highLvl = mHighLvl;
             audioserver = new AudioServer(aport);
             println("Net On");
             delay(2000);
@@ -308,14 +303,6 @@ void dispatch() {
 
 
     switch(key) {
-//    case',':
-//      contScale -= 1;
-//      println("contScale "+contScale);
-//      break;
-//    case'.':
-//      contScale += 1;
-//      println("contScale "+contScale);
-//      break;
     case 'c':
         useColor = !useColor;
         println("useColor",useColor?"On":"Off");
