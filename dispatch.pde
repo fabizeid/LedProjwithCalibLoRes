@@ -44,6 +44,16 @@ void dispatch() {
             resetCalibForEdge();
             lastKey = 0;
             return;
+        case '-':
+            bilatColorSigma -= 1;
+            lastKey = 0;
+            println("bilatColorSigma :", bilatColorSigma);
+            return;
+        case '=':
+            bilatColorSigma += 1;
+            lastKey = 0;
+            println("bilatColorSigma :", bilatColorSigma);
+            return;
         case ';':
             highThresh -= 5;
             lastKey = 0;
@@ -148,6 +158,10 @@ void dispatch() {
             enableContour = !enableContour;
             println("Contour",enableContour?"On":"Off");
             break;
+        case 'g':
+            enableGrid = !enableGrid;
+            println("enableGrid",enableGrid?"On":"Off");
+            break;
         case 'p':
             enablePaint = !enablePaint;
             println("Paint",enablePaint?"On":"Off");
@@ -194,7 +208,7 @@ void dispatch() {
                 println("Calibration On");
                 println("Calibration : (i)nsert, (r)eset, (l)oad, (s)ave");
                 println("Calibration : (c)apture, (1)previous, (2)next, (3)live");
-                println("(;,') high thresh adjusment, (.,/) high thresh adjusment");
+                println("(-,=) bilat,(;,') high thresh, (.,/) high thresh");
                 println("(j,k) num of LED, (n,m) LED intensity");
 
             }
@@ -334,7 +348,7 @@ void dispatch() {
         println("Print: (s)ound lvl, (t)hreshold, (e)nergy, (o)neShotPrint ");
         break;
     case 'v':
-        println("Video: (m)onitor, (p)aint, (c)ontour, (t)est, , motio(n) detection mode, (e)dge detection, cali(b)rate, (d)iff, (o)ff ");
+        println("Video: (m)onitor, (p)aint, (c)ontour, (g)rid, (t)est, , motio(n) detection mode, (e)dge detection, cali(b)rate, (d)iff, (o)ff ");
         println("debug bac(k)ground, (v)uemeter");
 
         break;

@@ -39,7 +39,7 @@ final int[] ROIRange = {0,2};
 int [] bImgsEnergy;
 float [] bImgsMean,meanForT,meanForCalib;
 float currentMean;
-int[] lowEdgeT,highEdgeT,levelColor,idxHist;
+int[] lowEdgeT,highEdgeT,bilatSigmaT,levelColor,idxHist;
 final int numlevelColors = 6;
 float calibLvl;
 PImage bimg,paintImg,edgeImg,contImg,diffImg,backImg,inputImg;
@@ -51,7 +51,7 @@ int lastGestureSwitch; //ms
 int gestureState;
 int gestureSweepCount;
 int lastBorderCheck; //ms
-int borderWidth,borderColor,numLedOn,ledIntensity;
+int borderWidth,borderColor,numLedOn,ledIntensity,bilatColorSigma;
 BackgroundSubtractorMOG backgroundSubtractor;
 
 //min supported res (also multiple of OPC grid)
@@ -83,6 +83,7 @@ boolean debugBackground = false;
 boolean enableTest = false;
 boolean enablePaint = false;
 boolean enableContour = true;
+boolean enableGrid = true;
 boolean stopLoop = false;
 boolean saveContour = false;
 char prevDetectionAlg, detectionAlg = 'v'; //(c)alibrate (e)dge (m)otion (d)iff (o)ff (v)uemeter
@@ -213,6 +214,7 @@ void setup() {
         levelColor[i] = lerpColor(from, to,(float)i/numlevelColors);
         idxHist[i] = 0;
     }
+    bilatColorSigma = 25;
 }
 
 void setOPCGrid(){
@@ -270,6 +272,7 @@ void draw() {
            isInit = false;
        }
        //if(borderWidth > 0) border();
+       oneShotPrint = false;
        return;
     }
 
@@ -416,37 +419,14 @@ void runEdgeAlgorithm(float lvl){
     //TODO figure out if best is to use ROI mean or full image mean
     //currentMean = (float)Core.mean(opencv.getGray()).val[0];
     currentMean = (float)Core.mean(opencv.getGray().rowRange(ROIRange[0],ROIRange[1])).val[0];
-    if(oneShotPrint){
-        println(lowThresh,highThresh,currentMean);
-    }
-    if(blur){
-        if(useColor){
-            Imgproc.cvtColor(getCurrentMat(),matToFilterIn,Imgproc.COLOR_BGRA2BGR);
-            //Imgproc.bilateralFilter(matToFilterIn, matToFilterOut, -1,borderColor,borderWidth);
-            Imgproc.bilateralFilter(matToFilterIn, matToFilterOut, -1,25*3,5);
-            Imgproc.cvtColor(matToFilterOut,getCurrentMat(),Imgproc.COLOR_BGR2BGRA);
-        } else {
-            opencv.getGray().copyTo(matToFilterGray);
-            Imgproc.bilateralFilter(matToFilterGray, getCurrentMat(), -1,25,5);
-        }
 
-        //Imgproc.bilateralFilter(matToFilterGray, opencv.getGray(), -1,borderColor,borderWidth);
-    }
-
-    if(debugMode){
-        inputImg.copy(opencv.getOutput(),0,0,w,h,0,0,w,h);
-        image(inputImg,w,0);
-    }
-
-    //TODO bilateralFilter
-    if(calibrate){
-        calibrateForEdge();
-        opencv.findCannyEdges(lowThresh,highThresh);
-    } else if(lowEdgeT.length != 0){
+    if(!calibrate && lowEdgeT.length != 0){
         int i = getMeanFloorIdx(currentMean,meanForT);
         //TODO if needed: interpolate between i and i+1 values of thresholds
+        lowThresh = lowEdgeT[i];
+        highThresh = highEdgeT[i];
+        bilatColorSigma = bilatSigmaT[i];
         if(printThreshold) println(i,currentMean,meanForT[i],lowEdgeT[i],highEdgeT[i]);
-        opencv.findCannyEdges(lowEdgeT[i],highEdgeT[i]);
     } else if(autoThreshold) {
         //from http://justin-liang.com/tutorials/canny/
         //highThreshold = max(max(im))*highThresholdRatio;
@@ -464,9 +444,28 @@ void runEdgeAlgorithm(float lvl){
 	//upper = int(min(255, (1.0 + sigma) * v))
 	//edged = cv2.Canny(image, lower, upper)
         //opencv.findCannyEdges(lowThresh,(int)currentMean);
-        opencv.findCannyEdges(lowThresh,highThresh);
     } else {
-        opencv.findCannyEdges(lowThresh,highThresh);
+
+    }
+    if(blur && bilatColorSigma > 0){
+        if(useColor){
+            Imgproc.cvtColor(getCurrentMat(),matToFilterIn,Imgproc.COLOR_BGRA2BGR);
+            Imgproc.bilateralFilter(matToFilterIn, matToFilterOut, -1,bilatColorSigma*3,5);
+            Imgproc.cvtColor(matToFilterOut,getCurrentMat(),Imgproc.COLOR_BGR2BGRA);
+        } else {
+            opencv.getGray().copyTo(matToFilterGray);
+            Imgproc.bilateralFilter(matToFilterGray, getCurrentMat(), -1,bilatColorSigma,5);
+        }
+    }
+
+    if(debugMode){
+        inputImg.copy(opencv.getOutput(),0,0,w,h,0,0,w,h);
+        image(inputImg,w,0);
+    }
+
+    opencv.findCannyEdges(lowThresh,highThresh);
+    if(oneShotPrint){
+        println("mean",currentMean, "lowT",lowThresh,"highT",highThresh,"bilat (x3 for color)",bilatColorSigma);
     }
     opencv.useGray();
     opencv.dilate();
@@ -476,15 +475,14 @@ void runEdgeAlgorithm(float lvl){
         image(diffImg,0,h);
     }
     if(enablePaint) paint();
-    mapToGrid(opencv.getOutput(),edgeImg,lvl);
-    //mapToGrid(opencv.getOutput(),edgeImg,0);
-
+    if(enableGrid) mapToGrid(opencv.getOutput(),edgeImg,lvl);
 }
 
 void resetCalibForEdge(){
     meanForT = new float[0];
     lowEdgeT = new int[0];
     highEdgeT = new int[0];
+    bilatSigmaT = new int[0];
     println("Resetting Calib Arrays");
 }
 
@@ -492,9 +490,11 @@ void insertAndSortCalibForEdge(){
     float[] tempM = meanForT;
     int[] tempL = lowEdgeT;
     int[] tempH = highEdgeT;
+    int[] tempB = bilatSigmaT;
     meanForT = new float[tempM.length+1];
     lowEdgeT = new int[tempL.length+1];
     highEdgeT = new int[tempH.length+1];
+    bilatSigmaT = new int[tempB.length+1];
     int i, j;
     float meanDiff;
     boolean notInsterted = true;
@@ -503,6 +503,7 @@ void insertAndSortCalibForEdge(){
             meanForT[j] = currentMean;
             lowEdgeT[j] = lowThresh;
             highEdgeT[j] = highThresh;
+            bilatSigmaT[j] = bilatColorSigma;
             j++;
             notInsterted = false;
         }
@@ -510,15 +511,17 @@ void insertAndSortCalibForEdge(){
         meanForT[j] = tempM[i];
         lowEdgeT[j] = tempL[i];
         highEdgeT[j] = tempH[i];
+        bilatSigmaT[j] = tempB[i];
     }
 
     if(notInsterted) {//not inserted yet
         meanForT[j] = currentMean;
         lowEdgeT[j] = lowThresh;
         highEdgeT[j] = highThresh;
+        bilatSigmaT[j] = bilatColorSigma;
     }
     printArray(meanForT);
-    println("inserting ",currentMean,lowThresh,highThresh);
+    println("inserting ",currentMean,lowThresh,highThresh,bilatColorSigma);
 
 
 }
@@ -536,12 +539,15 @@ void loadCalibForEdge(char alg){
     meanForT = new float[numRows];
     lowEdgeT = new int[numRows];
     highEdgeT = new int[numRows];
+    bilatSigmaT = new int[numRows];
     int i = 0;
     for (TableRow row : table.rows()) {
         meanForT[i] = row.getFloat("mean");
         lowEdgeT[i] = row.getInt("lowThresh");
-        if(alg == 'e')
+        if(alg == 'e'){
             highEdgeT[i] = row.getInt("highThresh");
+            bilatSigmaT[i] = row.getInt("bilatColorSigma");
+        }
         i++;
     }
     println("Loaded data/"+fname);
@@ -559,23 +565,26 @@ void saveCalibForEdge(char alg){
     Table table = new Table();
     table.addColumn("mean");
     table.addColumn("lowThresh");
-    table.addColumn("highThresh");
+    if(alg == 'e'){
+            table.addColumn("highThresh");
+            table.addColumn("bilatColorSigma");
+    }
     TableRow newRow;
 
     for( int i = 0; i<lowEdgeT.length;i++){
         newRow = table.addRow();
         newRow.setFloat("mean", meanForT[i]);
         newRow.setInt("lowThresh", lowEdgeT[i]);
-        newRow.setInt("highThresh", highEdgeT[i]);
+        if(alg == 'e'){
+            newRow.setInt("highThresh", highEdgeT[i]);
+            newRow.setInt("bilatColorSigma", bilatSigmaT[i]);
+        }
     }
     saveTable(table, "data/"+ fname);
     println("saving to data/"+ fname);
 }
 
 
-void calibrateForEdge(){
-
-}
 
 boolean runDiffAlgorithm(){
 
@@ -728,7 +737,7 @@ void mapToGrid(PImage imgSrc,PImage imgDest,float lvl){
         pixel = imgSrc.pixels[imgPicIdx];
         if(pixel == 0xFFFFFFFF){
             //imgDest.pixels[imgPicIdx] = 0xFFAA0000;//levelColor[0];//0xFFFF0000;
-            imgDest.pixels[imgPicIdx] = Wheel(lvl);
+            imgDest.pixels[imgPicIdx] = Wheel(lvl,.6);
             //for (int j=0; j<lvl ;j++) {
             //    int curIdx = (circIdx-j/2);
             //    if (curIdx < 0) curIdx += numlevelColors;
@@ -901,11 +910,11 @@ void contourAudio(float lvl) {
     }
     else if(lvl < .2){
         pg.stroke(250,0,0);
-        pg.strokeWeight(4);
+        pg.strokeWeight(1);
     }
     else{
         pg.stroke(lerpColor(from, to,lvl));
-        pg.strokeWeight(1+lvl*9);
+        pg.strokeWeight(1+lvl*3);
     }
 
 
@@ -1462,6 +1471,7 @@ void vu3mOPC(float lvl) {
     int i,colr,idx;
     int height;
     height = int(map(lvl, minLvlAvg,maxLvlAvg,0,TOP-10)*audioGain);
+    if(height > TOP+3) height = TOP+3;
     if (height > peak) {
         peak   = height; // Keep 'peak' dot at top
         currentStrip = (int)random(0,numStrips-1);
@@ -1526,17 +1536,24 @@ void dynRange(float n){
     //if(volCount == 0)println(n,minLvl,maxLvl,minLvlAvg,maxLvlAvg,(maxLvl - minLvl));
 }
 
+int Wheel(float WheelPos) {
+    return Wheel(WheelPos,1);
+}
 // Input a value 0 to 255 to get a color value.
 // The colors are a transition r - g - b - back to r.
-int Wheel(float fWheelPos) {
-    int WheelPos = (int)fWheelPos;
+int Wheel(float WheelPos,float brightness) {
+    float r,g,b;
     if(WheelPos < 85) {
-        return color(WheelPos * 3, 255 - WheelPos * 3, 0);
+        r  = WheelPos * 3; g =  255 - WheelPos * 3; b = 0;
     } else if(WheelPos < 170) {
         WheelPos -= 85;
-        return color(255 - WheelPos * 3, 0, WheelPos * 3);
+        r = 255 - WheelPos * 3; g =  0; b = WheelPos * 3;
     } else {
         WheelPos -= 170;
-        return color(0, WheelPos * 3, 255 - WheelPos * 3);
+        r = 0; g = WheelPos * 3; b = 255 - WheelPos * 3;
     }
+    r *= brightness;
+    g *= brightness;
+    b *= brightness;
+    return color((int)r,(int)g,(int)b);
 }
