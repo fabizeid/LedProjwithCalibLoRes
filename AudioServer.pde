@@ -1,4 +1,5 @@
 import java.net.*;
+import java.nio.ByteBuffer;
 
 public class AudioServer implements Runnable
 {
@@ -11,7 +12,7 @@ public class AudioServer implements Runnable
     AudioServer(int port){
         this.port = port;
         this.socket = null;
-        this.buf = new byte[1];
+        this.buf = new byte[4];
         listen = true;
         // receive request
         try{
@@ -29,8 +30,9 @@ public class AudioServer implements Runnable
         println("disposed socket");
         socket = null;
     }
-    public int get(){
-        return (int)buf[0] & 0xFF;
+    public float get(){
+        //return (int)buf[0] & 0xFF;
+        return ByteBuffer.wrap(buf).getFloat();
     }
     public void stopThread(){
         if(listen){

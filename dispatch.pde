@@ -20,6 +20,12 @@ void dispatch() {
         case '4':
         case '5':
         case '6':
+            setColorMode("RGB");
+            vuAlg = key;
+            lastKey = 0;
+            return;
+        case '7':
+            setColorMode("HSB");
             vuAlg = key;
             lastKey = 0;
             return;
@@ -167,9 +173,9 @@ void dispatch() {
             println("Paint",enablePaint?"On":"Off");
             break;
         case 't':
-            enableContour = false;
-            enablePaint = false;
-            enableTest = !enableTest;
+            detectionAlg = 't';
+            vuAlg = '6';
+            isInit = true;
             break;
         case 'n': //motion
             detectionAlg = 'm';
@@ -348,7 +354,7 @@ void dispatch() {
         println("Print: (s)ound lvl, (t)hreshold, (e)nergy, (o)neShotPrint ");
         break;
     case 'v':
-        println("Video: (m)onitor, (p)aint, (c)ontour, (g)rid, (t)est, , motio(n) detection mode, (e)dge detection, cali(b)rate, (d)iff, (o)ff ");
+        println("Video: (m)onitor, (p)aint, (c)ontour, (g)rid, (t)riggeredMode, , motio(n) detection mode, (e)dge detection, cali(b)rate, (d)iff, (o)ff ");
         println("debug bac(k)ground, (v)uemeter");
 
         break;

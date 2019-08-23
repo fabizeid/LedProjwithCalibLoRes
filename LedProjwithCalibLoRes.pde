@@ -1,4 +1,6 @@
 //TODO make sure there is no leak due to use of get()
+//TODO stay in vumode until motion is detected then start rolling through different modes every once and a while (contour on, grid on, both on, vu meter ...), motion detection could be triggered if a large enough contour is found.
+
 
 final boolean isPI = false;
 //PIIN
@@ -41,6 +43,8 @@ float [] bImgsMean,meanForT,meanForCalib;
 float currentMean;
 int[] lowEdgeT,highEdgeT,bilatSigmaT,levelColor,idxHist;
 final int numlevelColors = 6;
+final int noContoursToTrigger = 10;
+int noContours = 0;
 float calibLvl;
 PImage bimg,paintImg,edgeImg,contImg,diffImg,backImg,inputImg;
 PImage [] calibImg;
@@ -48,6 +52,7 @@ boolean getsnapshot,isInit;
 int initIdx,capturedImgIdx;
 int lastGestureCheck; //ms
 int lastGestureSwitch; //ms
+int[] lastRippleCheck = new int[2]; //ms
 int gestureState;
 int gestureSweepCount;
 int lastBorderCheck; //ms
@@ -80,7 +85,6 @@ boolean initOPCGrid = true;
 boolean camMode = false;
 boolean debugMode = false;
 boolean debugBackground = false;
-boolean enableTest = false;
 boolean enablePaint = false;
 boolean enableContour = true;
 boolean enableGrid = true;
@@ -133,6 +137,11 @@ float maxVal;
 int peak = 16;      // Peak level of column; used for falling dots
 int peaks[] = new int[numStrips];
 int dotCount = 0;  //Frame counter for peak dot
+//Ripple variables
+int peakspersec = 0, peakcount = 0;
+int step = -1;
+int ripColour,center = 0,bgcol = 0;
+float lastLvl=0, lastDiff = 0;
 
 /*****************************************************************/
 
@@ -186,6 +195,7 @@ void setup() {
 
     lastGestureCheck = millis();
     lastBorderCheck = millis();
+    lastRippleCheck[0] = lastRippleCheck[1] = millis();
     gestureState = 0;
     lastGestureSwitch = lastGestureCheck;
     gestureSweepCount = 0;
@@ -257,7 +267,7 @@ void draw() {
            isInit = false;
        } else if (detectionAlg == 'd'){
            initDiffAlgorithm();
-       } else if (detectionAlg == 'e'){
+       } else if (detectionAlg == 'e' || detectionAlg == 't'){
            resetCalibForEdge();
            lowThresh = 75;
            highThresh = 145;
@@ -284,9 +294,8 @@ void draw() {
     } else if(soundMode.equals("test")){
         lvl = random(0,1);
     } else if(soundMode.equals("net")){
-        lvl = (float)audioserver.get();
-        lvl =  map( lvl,0.02,.3*255,0,1);
-        lvl *= audioGain;
+        lvl = audioserver.get();
+        dynRange(lvl);
     } else {
         lvl = audioSource.mix.level();
         dynRange(lvl);
@@ -312,6 +321,8 @@ void draw() {
         runMotionDetectionAlgorithm();
     else if (detectionAlg == 'e')
         runEdgeAlgorithm(lvl);
+    else if (detectionAlg == 't')
+        runTriggeredAlgorithm(lvl);
     else if (detectionAlg == 'd'){
         if(runDiffAlgorithm()) return;
     }
@@ -405,6 +416,12 @@ void runMotionDetectionAlgorithm(){
 //    //
 //}
 
+void runTriggeredAlgorithm(float lvl){
+    runEdgeAlgorithm(lvl);
+    if(noContours == noContoursToTrigger){
+        runVuAlg(lvl);
+    }
+}
 void runEdgeAlgorithm(float lvl){
     //Could use mean of whole image instead of ROI since calibration happens
     // with someone standing in front of screen. But wouldn't hurt trying
@@ -474,6 +491,11 @@ void runEdgeAlgorithm(float lvl){
         diffImg.copy(opencv.getOutput(),0,0,w,h,0,0,w,h);
         image(diffImg,0,h);
     }
+
+    if(detectionAlg == 't' && noContours == noContoursToTrigger){
+        return; //don't display as we are using display for vuAlg
+    }
+
     if(enablePaint) paint();
     if(enableGrid) mapToGrid(opencv.getOutput(),edgeImg,lvl);
 }
@@ -924,7 +946,7 @@ void contourAudio(float lvl) {
         pg.image(contImg,-3,-5,pg.width+7,pg.height+7);
     if(!getsnapshot) contImg = pg.get();//get img before current contour
     Mat tempMat = opencv.getGray();
-
+    boolean hasContour = false;
     for (Contour contour : opencv.findContours(false,false)) {
         if (contour.area() > minContourSize) {
             points = contour.getPoints();
@@ -933,10 +955,20 @@ void contourAudio(float lvl) {
                 pg.vertex(p.x, p.y);
             }
             pg.endShape(PConstants.CLOSE);
+            hasContour = true;
         }
     }
     pg.endDraw();
     if(getsnapshot) contImg = pg.get(); //get img after contour
+    if(hasContour)
+        noContours = 0;
+    else if (noContours <  noContoursToTrigger) {
+        noContours++;
+    }
+
+    if(detectionAlg == 't' && noContours == noContoursToTrigger){
+        return; //don't display as we are using display for vuAlg
+    }
     disp(contImg);
     disp(pg);
 }
@@ -1297,6 +1329,9 @@ void runVuAlg(float lvl){
     case '6':
         vu3mOPC(lvl);
         break;
+    case '7':
+        vuRipple(lvl);
+        break;
     }
 }
 
@@ -1507,6 +1542,71 @@ void vu3mOPC(float lvl) {
         if(peak > 0) peak--;
         dotCount = 0;
     }
+}
+
+
+void vuRipple(float lvl){
+    int now = millis();
+    float diff = lvl-lastLvl;
+    if(diff  < 0 && lastDiff > 0){
+        peakcount++;
+        step = -1;
+    }
+    lastDiff = diff;
+    lastLvl = lvl;
+
+    if(now - lastRippleCheck[0] > 1000){
+        lastRippleCheck[0] = now;
+        peakspersec = peakcount; // Count the peaks per second. This value will become the foreground hue.
+        peakcount = 0;   // Reset the counter every second.
+        println(peakspersec);
+    }
+
+    if(now - lastRippleCheck[1] > 20){
+        lastRippleCheck[1] = now;
+        ripple();
+    }
+}
+
+void ripple(){
+    int idx;
+    int x = numStrips/2;
+    loadPixels();
+    for (int i = 0; i < numLedPerStrip; i++){
+        idx = opc.pixelLocations[ i + numLedPerStrip*x];
+        pixels[idx] = color(bgcol, 255, int(maxLvlAvg*100));  // Set the background colour.
+    }
+
+    switch (step) {
+
+    case -1:                                                          // Initialize ripple variables.
+        center  = (int)random(numLedPerStrip-1);
+        ripColour = (peakspersec*10) % 255;                                             // More peaks/s = higher the hue colour.
+        step = 0;
+        bgcol = (bgcol+8)%255;
+        break;
+
+    case 0:
+        idx = opc.pixelLocations[ center + numLedPerStrip*x];
+        pixels[idx] = color(ripColour, 255, 255);                          // Display the first pixel of the ripple.
+        step ++;
+        break;
+
+    case 16:                                                    // At the end of the ripples.
+      // step = -1;
+      break;
+
+    default:                                                             // Middle of the ripples.
+
+        idx = opc.pixelLocations[ (center + step + numLedPerStrip) % numLedPerStrip + numLedPerStrip*x];
+        pixels[idx] += color(ripColour, 255, 255/step*2);       // Simple wrap from Marc Miller.
+        idx = opc.pixelLocations[ (center - step + numLedPerStrip) % numLedPerStrip + numLedPerStrip*x];
+        pixels[idx] += color(ripColour, 255, 255/step*2);
+        step ++;                                                         // Next step.
+        break;
+    } // switch step
+    updatePixels();
+
 }
 
 void dynRange(float n){
