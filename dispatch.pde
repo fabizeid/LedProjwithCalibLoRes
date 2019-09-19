@@ -277,7 +277,11 @@ void dispatch() {
         switch(key) {
         case 'c':
             tuneMode = 'c';
-            println("Adjust Contour");
+            println("Adjust Contour Size");
+            break;
+        case 'n':
+            tuneMode = 'n';
+            println("Adjust Num Contours");
             break;
         case 's':
             tuneMode = 's'; //adjust sound
@@ -393,6 +397,11 @@ void dispatch() {
             minContourSize -= 500;
             println("minContourSize :", minContourSize);
             break;
+        case 'n':
+            if(numContoursToDraw > 0)
+                numContoursToDraw -= 1;
+            println("numContoursToDraw :", numContoursToDraw);
+            break;
         case 's':
             audioGain -= .1;
             println("audioGain :", audioGain);
@@ -421,6 +430,10 @@ void dispatch() {
         case 'c':
             minContourSize += 500;
             println("minContourSize :", minContourSize);
+            break;
+        case 'n':
+            numContoursToDraw += 1;
+            println("numContoursToDraw :", numContoursToDraw);
             break;
         case 's':
             audioGain += .1;

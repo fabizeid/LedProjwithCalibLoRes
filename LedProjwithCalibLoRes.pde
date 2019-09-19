@@ -11,6 +11,7 @@ final boolean isPI = false;
 import processing.video.*;
 //PIOUT
 Capture video;
+//Movie video;
 
 import gab.opencv.*;
 import org.opencv.imgproc.Imgproc;
@@ -62,8 +63,8 @@ BackgroundSubtractorMOG backgroundSubtractor;
 //min supported res (also multiple of OPC grid)
 final int h = 180;
 final int w = 120;
-final int vw = 320;
-final int vh = 240;
+final int vw = 320; //640;
+final int vh = 240; //360;
 final int fRate = 20;
 String ip;
 final int port = 7890;
@@ -76,6 +77,7 @@ final color from = color(250, 0, 0);
 final color to = color(250, 216, 0);
 //final String songPath = "C:/Users/farid/Desktop/Karen Music/Al Stewart - On The Border.mp3";
 String songPath = "C:/Users/farid/Desktop/Karen Music/Amy McDonald - This Is The Life.mp3";
+String moviePath = "C:/Users/farid/Pictures/Camera Roll/WIN_20190911_21_38_17_Pro.mp4";
 //final String songPath = "C:/Users/farid/Desktop/Karen Music/Manu Chao - Desaparecido.mp3";
 //final String songPath = "C:/Users/farid/Desktop/Karen Music/Tarkan - Dudu.mp3";
 String soundMode = "noSound";//groove,mic,noSound
@@ -103,6 +105,7 @@ boolean useMeanforBg = true;
 int lowThresh;
 int highThresh;
 int minContourSize = 3000;
+int numContoursToDraw = 5;
 float dynRangefactor = 100;
 float audioGain = 1;
 final boolean enableGesture = false;
@@ -159,8 +162,10 @@ void setup() {
     pg = createGraphics(w, h);
     //PIOUT
     video = new Capture(this, vw,vh);
+    //video = new Movie(this,moviePath);
     //PIOUT
     video.start();
+    //video.loop();
     //PIIN
     //video = new GLVideo(this, "v4l2src extra-controls=c,brightness=60 ! video/x-raw, width=(int)"+w+", height=(int)"+h+", framerate=20/1", GLVideo.NO_SYNC);
     //video = new GLVideo(this, "v4l2src extra-controls=c,brightness=60,auto_exposure=1,exposure_time_absolute=262,white_balance_auto_preset=1 ! video/x-raw, width=(int)"+w+", height=(int)"+h+", framerate=20/1", GLVideo.NO_SYNC);
@@ -168,6 +173,7 @@ void setup() {
 
     //PIIN
     //video.play();
+
 
     if(isPI){
         ip = "127.0.0.1";
@@ -759,7 +765,7 @@ void mapToGrid(PImage imgSrc,PImage imgDest,float lvl){
         pixel = imgSrc.pixels[imgPicIdx];
         if(pixel == 0xFFFFFFFF){
             //imgDest.pixels[imgPicIdx] = 0xFFAA0000;//levelColor[0];//0xFFFF0000;
-            imgDest.pixels[imgPicIdx] = Wheel(lvl,.6);
+            imgDest.pixels[imgPicIdx] = Wheel(lvl,map(lvl, 30,150,.4,1));//.6
             //for (int j=0; j<lvl ;j++) {
             //    int curIdx = (circIdx-j/2);
             //    if (curIdx < 0) curIdx += numlevelColors;
@@ -947,17 +953,21 @@ void contourAudio(float lvl) {
     if(!getsnapshot) contImg = pg.get();//get img before current contour
     Mat tempMat = opencv.getGray();
     boolean hasContour = false;
-    for (Contour contour : opencv.findContours(false,false)) {
-        if (contour.area() > minContourSize) {
-            points = contour.getPoints();
-            pg.beginShape();
-            for (PVector p : points) {
-                pg.vertex(p.x, p.y);
-            }
-            pg.endShape(PConstants.CLOSE);
-            hasContour = true;
+
+    ArrayList<Contour> contours = opencv.findContours(false,true);
+    for (int i = 0; i < contours.size(); i++ ) {
+        if (i > numContoursToDraw) break;
+        Contour contour = contours.get(i);
+        if (contour.area() < minContourSize) break;
+        points = contour.getPoints();
+        pg.beginShape();
+        for (PVector p : points) {
+            pg.vertex(p.x, p.y);
         }
+        pg.endShape(PConstants.CLOSE);
+        hasContour = true;
     }
+
     pg.endDraw();
     if(getsnapshot) contImg = pg.get(); //get img after contour
     if(hasContour)
@@ -998,6 +1008,7 @@ void getNextVideoFrame(){
     if (video.available() ) {
         background(0);
         video.read();
+        //println(video.width,video.height);
         if(isPI) {
             bimg.copy(video,0,0,w,h,0,0,w,h);
         } else {
