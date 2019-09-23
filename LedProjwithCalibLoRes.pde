@@ -32,7 +32,7 @@ OPC opc;
 AudioServer audioserver;
 PGraphics pg,pgPlot;
 ArrayList<PVector> points;
-final int nBimgs = 2;//13*2;
+final int nBimgs = 13*2;//13*2;
 Mat[] bImgsMat,bImgsMatR,bImgsMatG,bImgsMatB,bImgsMatGray;
 Mat matToFilterIn,matToFilterOut,matToFilterGray;
 PImage ROIImg;
@@ -80,20 +80,20 @@ String songPath = "C:/Users/farid/Desktop/Karen Music/Amy McDonald - This Is The
 String moviePath = "C:/Users/farid/Pictures/Camera Roll/WIN_20190911_21_38_17_Pro.mp4";
 //final String songPath = "C:/Users/farid/Desktop/Karen Music/Manu Chao - Desaparecido.mp3";
 //final String songPath = "C:/Users/farid/Desktop/Karen Music/Tarkan - Dudu.mp3";
-String soundMode = "noSound";//groove,mic,noSound
+String soundMode = "mic";//groove,mic,noSound
 //final String soundMode = "groove";//groove,mic,noSound
 boolean useColor = false;
 boolean initOPCGrid = true;
 boolean camMode = false;
 boolean debugMode = false;
 boolean debugBackground = false;
-boolean enablePaint = false;
+boolean enablePaint = true;
 boolean enableContour = true;
 boolean enableGrid = true;
 boolean stopLoop = false;
 boolean saveContour = false;
-char prevDetectionAlg, detectionAlg = 'v'; //(c)alibrate (e)dge (m)otion (d)iff (o)ff (v)uemeter
-char vuAlg = '1';
+char prevDetectionAlg, detectionAlg = 't'; //(c)alibrate (e)dge (m)otion (d)iff (o)ff (v)uemeter (t)riggered
+char vuAlg = '6';
 boolean calibrate = false;
 boolean blur = false;
 boolean printThreshold = false;
@@ -101,6 +101,7 @@ boolean printSLvl = false;
 boolean printEnergy = false;
 boolean oneShotPrint = false;
 boolean useMeanforBg = true;
+boolean useWheelColor = false;
 
 int lowThresh;
 int highThresh;
@@ -169,6 +170,8 @@ void setup() {
     //PIIN
     //video = new GLVideo(this, "v4l2src extra-controls=c,brightness=60 ! video/x-raw, width=(int)"+w+", height=(int)"+h+", framerate=20/1", GLVideo.NO_SYNC);
     //video = new GLVideo(this, "v4l2src extra-controls=c,brightness=60,auto_exposure=1,exposure_time_absolute=262,white_balance_auto_preset=1 ! video/x-raw, width=(int)"+w+", height=(int)"+h+", framerate=20/1", GLVideo.NO_SYNC);
+    //video = new GLVideo(this, "v4l2src extra-controls=c,contrast=10,auto_exposure=1,exposure_time_absolute=300,white_balance_auto_preset=1 ! video/x-raw, width=(int)"+w+", height=(int)"+h+", framerate=20/1", GLVideo.NO_SYNC);
+
     //video = new GLVideo(this, "v4l2src ! video/x-raw, width=(int)"+w+", height=(int)"+h+", framerate=20/1", GLVideo.NO_SYNC);
 
     //PIIN
@@ -220,8 +223,8 @@ void setup() {
     }
     maxVal = 0;
     borderWidth = 0;
-    //borderColor = 250;
-    borderColor = 0;
+    borderColor = 250;
+    //borderColor = 0;
     ledIntensity = 0;
     numLedOn = 0;
     levelColor = new int[numlevelColors];
@@ -271,9 +274,11 @@ void draw() {
            backgroundSubtractor = new BackgroundSubtractorMOG(15, 3, .5);
            println("Init motion");
            isInit = false;
-       } else if (detectionAlg == 'd'){
+       } else if (detectionAlg == 'd'|| detectionAlg == 't'){
            initDiffAlgorithm();
-       } else if (detectionAlg == 'e' || detectionAlg == 't'){
+           lowThresh = 20;
+           highThresh = 40;
+       } else if (detectionAlg == 'e'){
            resetCalibForEdge();
            lowThresh = 75;
            highThresh = 145;
@@ -287,7 +292,7 @@ void draw() {
        } else {
            isInit = false;
        }
-       //if(borderWidth > 0) border();
+       if(borderWidth > 0) border('w');
        oneShotPrint = false;
        return;
     }
@@ -327,10 +332,15 @@ void draw() {
         runMotionDetectionAlgorithm();
     else if (detectionAlg == 'e')
         runEdgeAlgorithm(lvl);
-    else if (detectionAlg == 't')
-        runTriggeredAlgorithm(lvl);
+    else if (detectionAlg == 't'){
+        //runTriggeredAlgorithm(lvl);
+        if(runDiffAlgorithm(true)) {
+            runVuAlg(lvl);
+            if(borderWidth > 0) border('w');
+            return;}
+    }
     else if (detectionAlg == 'd'){
-        if(runDiffAlgorithm()) return;
+        runDiffAlgorithm(false);
     }
     else if (detectionAlg == 'c')
         calibrateLED();
@@ -349,7 +359,7 @@ void draw() {
 
     if(enableContour) contourAudio(lvl);
     if(numLedOn > 0) spread(numLedOn,ledIntensity,numLedPerStrip/3,0);
-    if(borderWidth > 0) border();
+    if(borderWidth > 0) border('w');
     oneShotPrint = false;
 }
 void keyPressed() {
@@ -612,11 +622,17 @@ void saveCalibForEdge(char alg){
     println("saving to data/"+ fname);
 }
 
+void printCalibForEdge(){
+    println("mean lowThresh highThresh bilatColorSigma");
+    for( int i = 0; i<lowEdgeT.length;i++){
+        println(meanForT[i],lowEdgeT[i],highEdgeT[i],bilatSigmaT[i]);
+    }
+}
 
 
-boolean runDiffAlgorithm(){
+boolean runDiffAlgorithm(boolean isTriggered){
 
-    int i;
+    int i,threshScale = 1;
     if(useMeanforBg){
         //First detect if intrusion in ROI area
         //if stddev increases on diff of ROI, intrusion is
@@ -643,6 +659,7 @@ boolean runDiffAlgorithm(){
     }
 
     if(channelMode == 'm'){
+        threshScale = 2;
         if(blur){
             Imgproc.GaussianBlur(opencv.getR(), opencv.getR(), ksize, 2, 2);
             Imgproc.GaussianBlur(opencv.getG(), opencv.getG(), ksize, 2, 2);
@@ -694,11 +711,11 @@ boolean runDiffAlgorithm(){
     }
     else if(autoThreshold) {
     //TODO cutoff should depend on luminosity
-        lowThresh = (int)opencv.thresholdret();
+        highThresh = (int)opencv.thresholdret();
         if(printThreshold){
-            println("Threshold lvl:  ",lowThresh);
+            println("Threshold lvl:  ",highThresh);
         }
-        //if (thresh < 30) return;
+        if (highThresh < lowThresh*threshScale) return true;
     } else if(lowEdgeT.length != 0){
         int j = getMeanFloorIdx(currentMean,meanForT);
         lowThresh = lowEdgeT[j];
@@ -815,10 +832,10 @@ void border(){
     border('r');
 }
 void border(char col){
-    if(true) return;
+    //if(true) return;
     //int now = millis();
     float spacing = h / numLedPerStrip;
-    int picIdx = opc.pixelLocations[0];
+    int picIdx = opc.pixelLocations[opc.pixelLocations.length-1];
     strokeWeight((2*borderWidth-1)*spacing+1); // 2-4,3-7,4-10
 
     if(col == 'r')
@@ -826,14 +843,14 @@ void border(char col){
     else
         stroke(borderColor, borderColor, borderColor);
     noFill();
-    int xr = picIdx % width;
-    int yr = picIdx / width;
+    int xr = picIdx % w;
+    int yr = picIdx / w;
     int wr = (int)spacing*(numStrips-1)+1;
     int hr = (int)spacing*(numLedPerStrip-1)+1;
-    circle(w/2,h/2,w/4);
+    //circle(w/2,h/2,w/4);
 
     //rect(xr,yr,wr,hr);
-    //line(xr,yr,xr+wr,yr);
+    line(xr,yr,xr+wr,yr);
     //line(xr,yr+hr,xr+wr,yr+hr);
 }
 void paint(){
@@ -923,26 +940,37 @@ void checkGesture(int pixIdx,boolean pixelOn){
         println("gesture timout");
     }
 }
-void contourAudio(float lvl) {
+void contourAudio(float lvlArg) {
+    float lvl;
+    int colr;
     setColorMode("RGB");
     pg.beginDraw();
     pg.noFill();
     //pg.fill(255,0,0);
     getsnapshot = false;
-    lvl = map(lvl, minLvlAvg,maxLvlAvg,0,1);
+    if(useWheelColor){
+        lvl = map(lvlArg,minLvlAvg,maxLvlAvg,0.4,1);
+        colr = Wheel(map(lvlArg,minLvlAvg,maxLvlAvg,30+50,150+50),lvl);
+    } else {
+        lvl = map(lvlArg,minLvlAvg,maxLvlAvg,0,1);
+        colr = lerpColor(from, to,lvl);
+    }
+
     lvl *= audioGain;
-    if(lvl > 1) {
-        pg.stroke(250,250,250);
+    if(lvl > 1) { //turn off for now
+        pg.stroke(90,90,90);
         getsnapshot = true;
-        pg.strokeWeight(2);
+        useWheelColor = !useWheelColor;
+        pg.strokeWeight(3);
     }
     else if(lvl < .2){
-        pg.stroke(250,0,0);
-        pg.strokeWeight(1);
+        pg.stroke(colr);
+        //pg.stroke(250,0,0);
+        pg.strokeWeight(3);
     }
     else{
-        pg.stroke(lerpColor(from, to,lvl));
-        pg.strokeWeight(1+lvl*3);
+        pg.stroke(colr);
+        pg.strokeWeight(3+lvl*3);
     }
 
 
@@ -1154,7 +1182,7 @@ void initDiffAlgorithm(){
         // float l = map((float)i/(nBimgs-2),0,1,0,1.4);
         //contourAudio(.2+calibLvl);
         //calibLvl += .1;
-        spread((int)calibLvl,100,numLedPerStrip/3,0);
+        spread((int)calibLvl,220,numLedPerStrip/3,0);
         calibLvl += 24;
         delay(500);
         //Current camera snapshot corresponds to previous

@@ -143,6 +143,8 @@ void dispatch() {
         case 'o':
             oneShotPrint = true;
             break;
+        case 'c':
+            printCalibForEdge();
         }
 
         lastKey = 0;
@@ -355,7 +357,7 @@ void dispatch() {
 
         break;
     case 'p':
-        println("Print: (s)ound lvl, (t)hreshold, (e)nergy, (o)neShotPrint ");
+        println("Print: (s)ound lvl, (t)hreshold, (e)nergy, (o)neShotPrint, (c)alibration data ");
         break;
     case 'v':
         println("Video: (m)onitor, (p)aint, (c)ontour, (g)rid, (t)riggeredMode, , motio(n) detection mode, (e)dge detection, cali(b)rate, (d)iff, (o)ff ");
